@@ -3,9 +3,20 @@
 # 
 #       Before running this Script, please first run 01_data_import_api.R
 #
-#       This script is for cleaning the Go.Data data for COVID - core variables ONLY (i.e. does not retrieve from custom questionnaire as this varies across instances
+#       This script is for cleaning the Go.Data data for core variables ONLY (i.e. does not retrieve from custom questionnaire as this varies across instances)
 #       You can adapt these relatively easily if you need to add in variables from your questionnaire.
-#       Script authored and maintained by Go.Data team (godata@who.int): Sara Hollis (holliss@who.int); James Fuller (fullerj@who.int)
+#       Script authored and maintained by Go.Data team (godata@who.int)
+
+
+# Main cleaning functions include:
+
+# 1. flatten hierarchical locations and bring in all vars for all admin levels, for easier joining later.
+# 2. remove nested and list fields that you do not need, so dataframes can be exported properly.
+# 3. for nested and list field that you do need, unnest and standardize responses i.e. hosp and isolation
+# 4. standardize column name syntax
+# 5. simplify categorical var syntax
+# 6. get dates in right format
+# 7. add useful new vars (age category)
 
 ####################################################################################################################################################
 
@@ -14,7 +25,7 @@
 ## CLEAN LOCATIONS
 ## 
 ## rearrange via joins to get into more usable hierarchy format
-## these can then be joined to cases, contacts, etc
+## these can then be joined to cases, contacts, etc for further analysis.
 ##########################################################################
 
 #This generates a warning, but it can be ignored
@@ -73,7 +84,7 @@ locations_clean <- locations_clean %>% left_join(full, by="location_id")
 ### Clean & Un-nest CASES
 ##########################################################################
 
-# Unnest pertinent list fields:
+# Unnest pertinent list fields, where there can be multiple rows per case:
 
 # Unnest Addresses and have a standalone table with all addresses even if more than 1 per person
 cases_address_history_clean <- cases %>%
@@ -82,79 +93,90 @@ cases_address_history_clean <- cases %>%
   unnest(addresses, names_sep = "_") %>%
   select_all(~gsub("\\.","_",tolower(.))) %>%
   select_if(negate(is.list)) %>%
-  mutate(addresses_typeid = sub("LNG_REFERENCE_DATA_CATEGORY_ADDRESS_TYPE_","",addresses_typeid)) %>%
+  mutate(addresses_typeid = sub("*TYPE_","",addresses_typeid)) %>%
   left_join(locations_clean, by=c("addresses_locationid" = "location_id")) 
 
-# add in any missing address fields
-missing_columns_cases_addresses <- setdiff(address_columns, names(cases_address_history_clean))
-cases_address_history_clean[missing_columns_cases_addresses] <- NA
 
 # Unnest Date Ranges - Isolation / Hospitalizaton History
-# here we assume that if time frame is over 14d and no end date, it has already completed
 cases_hosp_history_clean <- cases %>%
   filter(deleted == FALSE | is.na(deleted)) %>%
   unnest(dateRanges, names_sep = "_") %>%
   select_at(vars(id, starts_with("dateRanges"),-dateRanges_dateRanges), tolower) %>%
   mutate(dateranges_typeid = sub(".*TYPE_", "", dateranges_typeid)) %>%
-  mutate_at(vars(dateranges_startdate, dateranges_enddate), as.Date) %>%
-  mutate(dateranges_enddate = case_when(!is.na(dateranges_enddate) ~ dateranges_enddate,
-                                        TRUE ~ dateranges_startdate + 14)) %>%
-  mutate(dateranges_status = case_when(dateranges_enddate <= Sys.Date() ~ "completed",
-                                       dateranges_enddate >= Sys.Date() ~ "ongoing",
-                                       TRUE ~ "date_missing")) 
+  mutate_at(vars(dateranges_startdate, dateranges_enddate), as.Date)
+  # mutate(dateranges_enddate = case_when(!is.na(dateranges_enddate) ~ dateranges_enddate,
+  #                                       TRUE ~ dateranges_startdate + 14)) %>%
+  # mutate(dateranges_status = case_when(dateranges_enddate <= Sys.Date() ~ "completed",
+  #                                      dateranges_enddate >= Sys.Date() ~ "ongoing",
+  #                                      TRUE ~ "date_missing")) 
 
 ################################################################################  
 
 
 cases_clean <- cases %>%
+  
+  # Remove all deleted records 
   filter(deleted == FALSE | is.na(deleted)) %>%
-  # Remove all nested fields
+  
+  # Remove all nested fields, otherwise problems with exporting to excel
   select_if(negate(is.list)) %>%
-  # take out all that are not core variables
-  select(-contains("questionnaireAnswers"))
+  
+  # take out all that are not core variables, otherwise diff versions and problems exporting to excel
+  select(-contains("questionnaireAnswers")) %>%
+  
+  # standardize column name syntax
+  janitor::clean_names() %>%
+  rename(date_of_birth = dob,
+         date_of_follow_up_start = follow_up_start_date,
+         date_of_follow_up_end = follow_up_end_date,
+         date_updated_at = updated_at,
+         date_created_at = created_at) %>%
+  
+  # take out other unnecessary vars that are unncessary and may confuse (i.e. was_case for cases)
+  select(-c(is_date_of_onset_approximate,
+         is_date_of_reporting_approximate,
+         safe_burial,
+         was_case,
+         follow_up_original_start_date,
+         deleted,
+         active,
+         outbreak_id,
+         created_on)) %>%
+  
+  #clean up all character fields
+  mutate_if(is_character, funs(na_if(.,""))) %>%
+  
+  # clean date formats (TODO: edit this so that we can see time stamps)
+  mutate_at(vars(starts_with("date")), list(~ as.Date(substr(., 1, 10)))) %>%
+  
+  #  truncate responses of categorical vars so easier to read
+  mutate(classification = sub(".*CLASSIFICATION_", "", classification),
+         gender = sub(".*GENDER_", "", gender),
+         occupation = sub(".*OCCUPATION_", "", occupation),
+         outcome_id = sub(".*OUTCOME_", "", outcome_id),
+         pregnancy_status = sub(".*STATUS_", "", pregnancy_status),
+         risk_level = sub(".*LEVEL_", "", risk_level)) %>%
+  
 
-# force variables that are unused for this project - otherwise they are dropped from JSON
-missing_columns_cases <- setdiff(case_columns, names(cases_clean))
-cases_clean[missing_columns_cases] <- NA
-cases_clean <- cases_clean[case_columns]
-cases_clean[cases_clean == "NA"] <- NA
-
-
-# specify which fields are dates, for formatting
-date_fields_cases <- c("dob","dateOfReporting","dateOfLastContact","dateOfOnset","dateOfOutcome","dateOfInfection","createdAt","dateBecomeCase","followUp.startDate","followUp.endDate")
-
-
-cases_clean <- cases_clean %>%
-  #join in current address from address history
-  left_join(cases_address_history_clean %>% filter(addresses_typeid=="USUAL_PLACE_OF_RESIDENCE"), by="id") %>%
-  #join in isolation date/location from hospitalization history
+  # join in info from dateRanges block (i.e. hospitalization and isolation)
+  # NOTE: this is adapted for hosp and isolation drop down selections but if diff dropdown is desired, can adapt.
   left_join(cases_hosp_history_clean %>% filter(dateranges_typeid=="ISOLATION"), by="id") %>%
   rename_at(vars(starts_with("dateranges")), funs(str_replace(., "dateranges", "isolation"))) %>%
   left_join(cases_hosp_history_clean %>% filter(dateranges_typeid=="HOSPITALIZATION"), by="id") %>%
   rename_at(vars(starts_with("dateranges")), funs(str_replace(., "dateranges", "hospitalization"))) %>%
-  # if there happen to be any duplicate column names, rename them here
-  rename_at(vars(ends_with(".x")),
-            ~str_replace(., "\\..$","")) %>% 
-  select_at(vars(-ends_with(".y"))) %>%
-  #clean up all character fields
-  mutate_if(is_character, funs(na_if(.,""))) %>%
-  #format dates
-  mutate_at(vars(all_of(date_fields_cases)), list(~ as.Date(substr(., 1, 10)))) %>%
-  mutate(date_of_reporting = dateOfReporting,
-         date_of_data_entry = createdAt,
-         date_of_infection = dateOfInfection,
-         date_of_onset = dateOfOnset,
-         date_of_outcome = dateOfOutcome, 
-         date_of_last_contact = dateOfLastContact,
-         date_of_followup_start = followUp.startDate,
-         date_of_followup_end = followUp.endDate,
-         date_become_case = dateBecomeCase) %>%
+  # NOTE: note all details are joined to case table, just whether or not they are isolated or hospitalized.
+  mutate(isolated = case_when(!is.na(isolation_typeid) ~ TRUE, TRUE ~ FALSE),
+         hospitalized = case_when (!is.na(hospitalization_typeid) ~ TRUE, TRUE ~ FALSE)) %>%
   
+  # join in current address from address history, only current place of residence
+  # inner_join(select(locations_clean, location_id, ends_with("_name")), by = c("usual_place_of_residence_location_id" = "location_id")) %>%
+  left_join(cases_address_history_clean %>% filter(addresses_typeid=="USUAL_PLACE_OF_RESIDENCE"), by="id") %>%
+
   
   # force NA ages to appear as NA, not as 0 like sometimes occurs  
-  mutate(age_years = as.numeric(age.years)) %>%
+  mutate(age_years = as.numeric(age_years)) %>%
   mutate(age_years = na_if(age_years,0)) %>%
-  mutate(age_months = as.numeric(age.months)) %>%
+  mutate(age_months = as.numeric(age_months)) %>%
   mutate(age_months = na_if(age_months,0)) %>%
   
   # standardize age vars into just one var
@@ -199,57 +221,26 @@ cases_clean <- cases_clean %>%
       age_class,
       levels = rev(levels(age_class)))) %>%
   
+  
+  # organize order of vars, only bring in what we need, take away confusing vars
   select(
-    uuid = id,
-    case_id = visualId,
+    id, visual_id, # identifiers 
+    first_name, last_name, gender, age, age_class, age_months, age_years, occupation, pregnancy_status, # demographics
+    date_of_reporting, date_of_onset, date_of_last_contact, date_become_case, # dates
+    classification, risk_level, has_relationships, was_contact, # epi
     location_id = addresses_locationid,
     lat = addresses_geolocation_lat,
     long = addresses_geolocation_lng,
-    geo_location_accurate = addresses_geolocationaccurate,
     address = addresses_addressline1,
     postal_code = addresses_postalcode,
     city = addresses_city,
-    firstName,
-    middleName,
-    lastName,
-    gender,
-    age,
-    age_class,
-    occupation,
-    classification,
     telephone = addresses_phonenumber,
     email = addresses_emailaddress,
-    outcome_id = outcomeId,
-    pregnancy_status = pregnancyStatus,
-    date_of_reporting,
-    date_of_data_entry,
-    date_of_infection,
-    date_of_onset,
-    date_of_outcome,
-    date_of_last_contact,
-    date_become_case,
-    date_of_followup_start,
-    date_of_followup_end,
-    date_of_onset_approximate = isDateOfOnsetApproximate,
-    transfer_refused = transferRefused,
-    risk_level = riskLevel,
-    risk_reason = riskReason,
-    has_relationships = hasRelationships,
-    was_contact = wasContact,
-    starts_with("isolation"),
-    starts_with("hospitalization"),
-    starts_with("admin"),
-    createdBy
-    
-  ) %>%
-  
-  mutate(classification = sub(".*CLASSIFICATION_", "", classification)) %>%
-  mutate(gender = sub(".*GENDER_", "", gender)) %>%
-  mutate(occupation = sub(".*OCCUPATION_", "", occupation)) %>%
-  mutate(outcome_id = sub(".*OUTCOME_", "", outcome_id)) %>%
-  mutate(pregnancy_status = sub(".*STATUS_", "", pregnancy_status)) %>%
-  mutate(risk_level = sub(".*LEVEL_", "", risk_level)) 
+    ends_with("_name"), # address
+    outcome_id, date_of_outcome, isolated, hospitalized, # outcome
+    created_by, date_created_at, updated_by, date_updated_at) # record modification
 
+##########################################################################################
 
 #Pull out all cases that used to be contacts
 contacts_becoming_cases <- cases_clean %>%
