@@ -8,7 +8,7 @@ outbreak_id <- "3b5554d7-2c19-41d0-b9af-475ad25a382b"   # <--------------- inser
 ###################################################################################################
 
 # SCRIPT TO PULL IN COLLECTIONS ACROSS ANY GO.DATA INSTANCE #
-# updated 21 July 2021
+# updated 04 August 2021
 
 ###################################################################################################
 # read in from Go.Data API, using your updated log-in credentials by Clicking "Source"
@@ -38,305 +38,274 @@ source(here::here("scripts", "aaa_load_packages.R"))
 #source(here::here("scripts", "set_core_fields.R"))
 
 ###################################################################################################
-# GET ACCESS TOKEN
+# FUNCTION TO GET ACCESS TOKEN
 ###################################################################################################
 
-url_request <- paste0(url,"api/oauth/token?access_token=123")
+#This funciton will be used before each API call to get an access token
+get_access_token <- function() {
+  response <- POST(url=paste0(url,"api/oauth/token?access_token=123"),  
+                   body = list(username = username,password = password),                                       
+                   encode = "json") %>%
+    content(as = "text") %>%
+    fromJSON(flatten = TRUE)
+  return(response$access_token)
+}
+print(get_access_token()) #Test to make sure url, username, and password are valid
 
-response <- POST(url=url_request,  
-                 body = list(
-                   username = username,                                          
-                   password = password),                                       
-                 encode = "json")
-
-content <-
-  content(response, as = "text") %>%
-  fromJSON(flatten = TRUE) %>%
-  glimpse()
-
-access_token <- content$access_token                 ## this is your access token !!! that allows API calls
 
 ###################################################################################################
 # GET CASES
 ###################################################################################################
 
-response_cases <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/cases"), 
-                      add_headers(Authorization = paste("Bearer", access_token, sep = " "))
-)
-json_cases <- content(response_cases, as = "text")
-cases <- as_tibble(fromJSON(json_cases, flatten = TRUE))
-rm(response_cases)
+#get total number of cases
+cases_n <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/cases/count"), 
+               add_headers(Authorization = paste("Bearer", get_access_token(), sep = " "))) %>%
+  content(as="text") %>% fromJSON(flatten=TRUE) %>% unlist() %>% unname()
+
+#Import Cases in batches 
+cases <- tibble()
+batch_size <- 50000 # number of records to import per iteration
+skip <-0
+while (skip < cases_n) {
+  message("********************************")
+  message(paste0("Importing records ", as.character(skip+1, scientific = FALSE), " to ", format(skip+batch_size, scientific = FALSE)))
+  cases.i <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/cases",
+                      "/?filter={%22limit%22:",format(batch_size, scientific = FALSE),",%22skip%22:",format(skip, scientific = FALSE),"}"), 
+               add_headers(Authorization = paste("Bearer", get_access_token(), sep = " "))) %>%
+    content(as='text') %>%
+    fromJSON( flatten=TRUE) %>%
+    as_tibble()
+  message(paste0("Imported ", format(nrow(cases.i), scientific = FALSE)," records"))
+  cases <- cases %>% bind_rows(cases.i)
+  skip <- skip + batch_size
+  message(paste0("Data Frame now has ", format(nrow(cases), scientific = FALSE), " records"))
+  rm(cases.i)
+}
+rm(batch_size, skip, cases_n)
 
 
 ###################################################################################################
-# RE-FETCH ACCESS TOKEN IN CASE TIME-0UT, GET CONTACTS
+# GET CONTACTS
 ###################################################################################################
 
-url_request <- paste0(url,"api/oauth/token?access_token=123")
+#get total number of contacts
+contacts_n <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/contacts/filtered-count"), 
+                  add_headers(Authorization = paste("Bearer", get_access_token(), sep = " "))) %>%
+  content(as="text") %>% fromJSON(flatten=TRUE) %>% unlist() %>% unname()
 
-response <- POST(url=url_request,  
-                 body = list(
-                   username = username,                                          
-                   password = password),                                       
-                 encode = "json")
+#import contacts in batches
+contacts <- tibble()
+batch_size <- 50000 # number of records to import per iteration
+skip <- 0
+while (skip < contacts_n) {
+  message("********************************")
+  message(paste0("Importing records ", format(skip+1, scientific = FALSE), " to ", format(skip+batch_size, scientific = FALSE)))
+  contacts.i <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/contacts",
+                        "/?filter={%22limit%22:",format(batch_size, scientific = FALSE),",%22skip%22:",format(skip, scientific = FALSE),"}"), 
+                 add_headers(Authorization = paste("Bearer", get_access_token(), sep = " "))) %>%
+    content(as='text') %>%
+    fromJSON( flatten=TRUE) %>%
+    as_tibble()
+  contacts <- contacts %>% bind_rows(contacts.i)
+  skip <- skip + batch_size
+  message(paste0("Imported ", format(nrow(contacts.i), scientific = FALSE)," records"))
+  message(paste0("Data Frame now has ", format(nrow(contacts), scientific = FALSE), " records"))
+  rm(contacts.i)
+}
+rm(batch_size, skip, contacts_n)
 
-content <-
-  content(response, as = "text") %>%
-  fromJSON(flatten = TRUE) %>%
-  glimpse()
-
-access_token <- content$access_token
-
-##################################################################################################
-
-# import oubtreak Contacts 
-response_contacts <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/contacts"), 
-                         add_headers(Authorization = paste("Bearer", access_token, sep = " "))
-)
-json_contacts <- content(response_contacts, as = "text")
-contacts <- as_tibble(fromJSON(json_contacts, flatten = TRUE))
-rm(response_contacts)
-
-###################################################################################################
-# RE-FETCH ACCESS TOKEN IN CASE TIME-0UT, GET FOLLOWUPS
-###################################################################################################
-
-url_request <- paste0(url,"api/oauth/token?access_token=123")
-
-response <- POST(url=url_request,  
-                 body = list(
-                   username = username,                                          
-                   password = password),                                       
-                 encode = "json")
-
-content <-
-  content(response, as = "text") %>%
-  fromJSON(flatten = TRUE) %>%
-  glimpse()
-
-access_token <- content$access_token
-
-##################################################################################################
-
-# import contact follow-ups (could filter last 21 days only to avoid system time-out)
-response_followups <- GET(paste0(
-  url,
-  "api/outbreaks/",
-  outbreak_id,
-  "/follow-ups"
-  # /?filter={%22where%22:{%22and%22:[{%22date%22:{%22between%22:[%22",
-  # date_21d_ago,
-  # "%22,%22",
-  # date_now,
-  # "%22]}}]}}"
-    ),
-  add_headers(Authorization = paste("Bearer", access_token, sep = " ")))
-json_followups <- content(response_followups, as="text")
-followups <- as_tibble(fromJSON(json_followups, flatten = TRUE)) 
-rm(response_followups)
 
 ###################################################################################################
-# RE-FETCH ACCESS TOKEN IN CASE TIME-0UT, GET EVENTS
+# GET FOLLOWUPS
 ###################################################################################################
 
-url_request <- paste0(url,"api/oauth/token?access_token=123")
+#get total number of follow-ups
+followups_n <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/follow-ups/filtered-count"), 
+                  add_headers(Authorization = paste("Bearer", get_access_token(), sep = " "))) %>%
+  content(as="text") %>% fromJSON(flatten=TRUE) %>% unlist() %>% unname()
 
-response <- POST(url=url_request,  
-                 body = list(
-                   username = username,                                          
-                   password = password),                                       
-                 encode = "json")
+#import follow-ups in batches
+followups <- tibble()
+batch_size <- 50000
+skip <- 0
+while (skip < followups_n) { #for (i in 1:ceiling(followups_n / batch_size)) {
+  message("********************************")
+  message(paste0("Importing records ", format(skip+1, scientific = FALSE), " to ", format(skip+batch_size, scientific = FALSE)))
+  followups.i <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/follow-ups",
+                            "/?filter={%22limit%22:",format(batch_size, scientific = FALSE),",%22skip%22:",format(skip, scientific = FALSE),"}"), 
+                     add_headers(Authorization = paste("Bearer", get_access_token(), sep = " "))) %>%
+    content(as='text') %>%
+    fromJSON( flatten=TRUE) %>%
+    as_tibble()
+  message(paste0("Imported ", format(nrow(followups.i), scientific = FALSE)," records"))
+  followups <- followups %>% bind_rows(followups.i)
+  skip <- skip + batch_size
+  message(paste0("Data Frame now has ", format(nrow(followups), scientific = FALSE), " records"))
+  rm(followups.i)
+}
+rm(batch_size, skip, followups_n)
 
-content <-
-  content(response, as = "text") %>%
-  fromJSON(flatten = TRUE) %>%
-  glimpse()
-
-access_token <- content$access_token
-
-##################################################################################################
-
-# import oubtreak Events 
-response_events <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/events"), 
-                         add_headers(Authorization = paste("Bearer", access_token, sep = " "))
-)
-json_events <- content(response_events, as = "text")
-events <- as_tibble(fromJSON(json_events, flatten = TRUE))
-rm(response_events)
-
-###################################################################################################
-# RE-FETCH ACCESS TOKEN IN CASE TIME-0UT, GET CONTACTS OF CONTACTS
-###################################################################################################
-
-url_request <- paste0(url,"api/oauth/token?access_token=123")
-
-response <- POST(url=url_request,  
-                 body = list(
-                   username = username,                                          
-                   password = password),                                       
-                 encode = "json")
-
-content <-
-  content(response, as = "text") %>%
-  fromJSON(flatten = TRUE) %>%
-  glimpse()
-
-access_token <- content$access_token
-
-##################################################################################################
-
-# import oubtreak Contact of Contacts 
-response_contacts_of_contacts <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/contacts-of-contacts"), 
-                       add_headers(Authorization = paste("Bearer", access_token, sep = " "))
-)
-json_contacts_of_contacts <- content(response_contacts_of_contacts, as = "text")
-contacts_of_contacts <- as_tibble(fromJSON(json_contacts_of_contacts, flatten = TRUE))
-rm(response_contacts_of_contacts)
 
 ###################################################################################################
-# RE-FETCH ACCESS TOKEN IN CASE TIME-0UT, GET LAB RESULTS
+# GET EVENTS
 ###################################################################################################
 
-url_request <- paste0(url,"api/oauth/token?access_token=123")
+#get total number of contacts
+events_n <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/events/filtered-count"), 
+                  add_headers(Authorization = paste("Bearer", get_access_token(), sep = " "))) %>%
+  content(as="text") %>% fromJSON(flatten=TRUE) %>% unlist() %>% unname()
 
-response <- POST(url=url_request,  
-                 body = list(
-                   username = username,                                          
-                   password = password),                                       
-                 encode = "json")
+events <- tibble()
+batch_size <- 50000
+skip <- 0
+while (skip < events_n) {
+  message("********************************")
+  message(paste0("Importing records ", format(skip+1, scientific = FALSE), " to ", format(skip+batch_size, scientific = FALSE)))
+  events.i <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/events",
+                           "/?filter={%22limit%22:",format(batch_size, scientific = FALSE),",%22skip%22:",format(skip, scientific = FALSE),"}"), 
+                    add_headers(Authorization = paste("Bearer", get_access_token(), sep = " "))) %>%
+    content(as='text') %>%
+    fromJSON( flatten=TRUE) %>%
+    as_tibble()
+  events <- events %>% bind_rows(events.i)
+  skip <- skip + batch_size
+  message(paste0("Imported ", format(nrow(events.i), scientific = FALSE)," records"))
+  message(paste0("Data Frame now has ", format(nrow(events), scientific = FALSE), " records"))
+  rm(events.i)
+}
+rm(batch_size, skip, events_n)
 
-content <-
-  content(response, as = "text") %>%
-  fromJSON(flatten = TRUE) %>%
-  glimpse()
-
-access_token <- content$access_token
-
-##################################################################################################
-
-# import oubtreak Lab Results 
-response_lab_results <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/lab-results/aggregate"), 
-                                     add_headers(Authorization = paste("Bearer", access_token, sep = " "))
-)
-json_lab_results <- content(response_lab_results, as = "text")
-lab_results <- as_tibble(fromJSON(json_lab_results, flatten = TRUE))
-rm(response_lab_results)
-
-###################################################################################################
-# RE-FETCH ACCESS TOKEN IN CASE TIME-0UT, GET RELATIONSHIPS
-###################################################################################################
-
-url_request <- paste0(url,"api/oauth/token?access_token=123")
-
-response <- POST(url=url_request,  
-                 body = list(
-                   username = username,                                          
-                   password = password),                                       
-                 encode = "json")
-
-content <-
-  content(response, as = "text") %>%
-  fromJSON(flatten = TRUE) %>%
-  glimpse()
-
-access_token <- content$access_token
-
-##################################################################################################
-
-# import outbreak Relationships
-response_relationships <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/relationships/export"), 
-                              add_headers(Authorization = paste("Bearer", access_token, sep = " "))
-)
-json_relationships <- content(response_relationships, as = "text")
-relationships <- as_tibble(fromJSON(json_relationships, flatten = TRUE))
-rm(response_relationships)
 
 ###################################################################################################
-# RE-FETCH ACCESS TOKEN IN CASE TIME-0UT, GET LOCATIONS
+# GET CONTACTS OF CONTACTS
 ###################################################################################################
 
-url_request <- paste0(url,"api/oauth/token?access_token=123")
+#get total number of contacts-of-contacts
+contacts_of_contacts_n <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/contacts-of-contacts/filtered-count"), 
+                  add_headers(Authorization = paste("Bearer", get_access_token(), sep = " "))) %>%
+  content(as="text") %>% fromJSON(flatten=TRUE) %>% unlist() %>% unname()
 
-response <- POST(url=url_request,  
-                 body = list(
-                   username = username,                                          
-                   password = password),                                       
-                 encode = "json")
+#import contacts_of_contacts in batches
+contacts_of_contacts <- tibble()
+batch_size <- 50000
+skip <- 0
+while (skip < contacts_of_contacts_n) {
+  message("********************************")
+  message(paste0("Importing records ", format(skip+1, scientific = FALSE), " to ", format(skip+batch_size, scientific = FALSE)))
+  contacts_of_contacts.i <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/contacts-of-contacts",
+                           "/?filter={%22limit%22:",format(batch_size, scientific = FALSE),",%22skip%22:",format(skip, scientific = FALSE),"}"), 
+                    add_headers(Authorization = paste("Bearer", get_access_token(), sep = " "))) %>%
+    content(as='text') %>%
+    fromJSON( flatten=TRUE) %>%
+    as_tibble()
+  contacts_of_contacts <- contacts_of_contacts %>% bind_rows(contacts_of_contacts.i)
+  skip <- skip + batch_size
+  message(paste0("Imported ", format(nrow(contacts_of_contacts.i), scientific = FALSE)," records"))
+  message(paste0("Data Frame now has ", format(nrow(contacts_of_contacts), scientific = FALSE), " records"))
+  rm(contacts_of_contacts.i)
+}
+rm(batch_size, skip, contacts_of_contacts_n)
 
-content <-
-  content(response, as = "text") %>%
-  fromJSON(flatten = TRUE) %>%
-  glimpse()
 
-access_token <- content$access_token
+###################################################################################################
+# GET LAB RESULTS
+###################################################################################################
 
-##################################################################################################
+#get total number of lab results
+lab_results_n <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/lab-results/filtered-count"), 
+                              add_headers(Authorization = paste("Bearer", get_access_token(), sep = " "))) %>%
+  content(as="text") %>% fromJSON(flatten=TRUE) %>% unlist() %>% unname()
+
+#import contacts_of_contacts in batches
+lab_results <- tibble()
+batch_size <- 50000
+skip <- 0
+while (skip < lab_results_n) {
+  message("********************************")
+  message(paste0("Importing records ", format(skip+1, scientific = FALSE), " to ", format(skip+batch_size, scientific = FALSE)))
+  lab_results.i <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/lab-results/aggregate",
+                                       "/?filter={%22limit%22:",format(batch_size, scientific = FALSE),",%22skip%22:",format(skip, scientific = FALSE),"}"), 
+                                add_headers(Authorization = paste("Bearer", get_access_token(), sep = " "))) %>%
+    content(as='text') %>%
+    fromJSON( flatten=TRUE) %>%
+    as_tibble()
+  lab_results <- lab_results %>% bind_rows(lab_results.i)
+  skip <- skip + batch_size
+  message(paste0("Imported ", format(nrow(lab_results.i), scientific = FALSE)," records"))
+  message(paste0("Data Frame now has ", format(nrow(lab_results), scientific = FALSE), " records"))
+  rm(lab_results.i)
+}
+rm(batch_size, skip, lab_results_n)
+
+
+###################################################################################################
+# GET RELATIONSHIPS
+###################################################################################################
+
+#get total number of relationships
+relationships_n <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/relationships/count"), 
+                     add_headers(Authorization = paste("Bearer", get_access_token(), sep = " "))) %>%
+  content(as="text") %>% fromJSON(flatten=TRUE) %>% unlist() %>% unname()
+
+#import reslationshps in batches
+relationships <- tibble()
+batch_size <- 50000
+skip <- 0
+while (skip < relationships_n) {
+  message("********************************")
+  message(paste0("Importing records ", format(skip+1, scientific = FALSE), " to ", format(skip+batch_size, scientific = FALSE)))
+  relationships.i <- GET(paste0(url,"api/outbreaks/",outbreak_id,"/relationships/export",
+                              "/?filter={%22limit%22:",format(batch_size, scientific = FALSE),",%22skip%22:",format(skip, scientific = FALSE),"}"), 
+                       add_headers(Authorization = paste("Bearer", get_access_token(), sep = " "))) %>%
+    content(as='text') %>%
+    fromJSON( flatten=TRUE) %>%
+    as_tibble()
+  relationships <- relationships %>% bind_rows(relationships.i)
+  skip <- skip + batch_size
+  message(paste0("Imported ", format(nrow(relationships.i), scientific = FALSE)," records"))
+  message(paste0("Data Frame now has ", format(nrow(relationships), scientific = FALSE), " records"))
+  rm(relationships.i)
+}
+rm(batch_size, skip, relationships_n)
+
+
+###################################################################################################
+# GET LOCATIONS
+###################################################################################################
 
 # import location hierarchy (outbreak agnostic)
-response_locations <- GET(paste0(url,"api/locations"), 
-                          add_headers(Authorization = paste("Bearer", access_token, sep = " "))
-)
-json_locations <- content(response_locations, as = "text")
-locations <- as_tibble(fromJSON(json_locations, flatten = TRUE))
-rm(response_locations)
+locations <- GET(paste0(url,"api/locations"), 
+                          add_headers(Authorization = paste("Bearer", get_access_token(), sep = " "))) %>%
+  content(as="text") %>%
+  fromJSON(flatten=TRUE) %>%
+  as_tibble()
+
 
 ###################################################################################################
-# RE-FETCH ACCESS TOKEN IN CASE TIME-0UT, GET TEAMS
+# GET TEAMS
 ###################################################################################################
-
-url_request <- paste0(url,"api/oauth/token?access_token=123")
-
-response <- POST(url=url_request,  
-                 body = list(
-                   username = username,                                          
-                   password = password),                                       
-                 encode = "json")
-
-content <-
-  content(response, as = "text") %>%
-  fromJSON(flatten = TRUE) %>%
-  glimpse()
-
-access_token <- content$access_token
-
-##################################################################################################
 
 # import Teams (outbreak agnostic)
-response_teams <- GET(paste0(url,"api/teams"), 
-                      add_headers(Authorization = paste("Bearer", access_token, sep = " "))
-)
-json_teams <- content(response_teams, as = "text")
-teams <- as_tibble(fromJSON(json_teams, flatten = TRUE))
-rm(response_teams)
+teams <- GET(paste0(url,"api/teams"), 
+                      add_headers(Authorization = paste("Bearer", get_access_token(), sep = " "))) %>%
+  content(as="text") %>%
+  fromJSON(flatten=TRUE) %>%
+  as_tibble()
+
 
 ###################################################################################################
-# RE-FETCH ACCESS TOKEN IN CASE TIME-0UT, GET USERS
+# GET USERS
 ###################################################################################################
 
-url_request <- paste0(url,"api/oauth/token?access_token=123")
-
-response <- POST(url=url_request,  
-                 body = list(
-                   username = username,                                          
-                   password = password),                                       
-                 encode = "json")
-
-content <-
-  content(response, as = "text") %>%
-  fromJSON(flatten = TRUE) %>%
-  glimpse()
-
-access_token <- content$access_token
-
-##################################################################################################
 # import Users (outbreak agnostic)
-response_users <- GET(paste0(url,"api/users"), 
-                      add_headers(Authorization = paste("Bearer", access_token, sep = " "))
-)
-json_users <- content(response_users, as = "text")
-users <- as_tibble(fromJSON(json_users, flatten = TRUE))
-rm(response_users)
+users <- GET(paste0(url,"api/users"), 
+                      add_headers(Authorization = paste("Bearer", get_access_token(), sep = " "))) %>%
+  content(as="text") %>%
+  fromJSON(flatten=TRUE) %>%
+  as_tibble()
 
 
-rm(content)
-rm(response)
+######################################################################################################
+# Remove extra items from the environment, leaving only the data frames from Go.Data
+######################################################################################################
+rm(username, password, url, outbreak_id, get_access_token)
