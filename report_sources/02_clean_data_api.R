@@ -31,8 +31,7 @@
 #This generates a warning, but it can be ignored
 
 locations_clean <- locations %>%
-  filter(deleted == FALSE | is.na(deleted)) %>%
-  filter(active == TRUE | is.na(active)) %>%
+  filter(!(deleted == TRUE) & !(active == FALSE)) %>%
   mutate(admin_level = sub(".*LEVEL_", "", geographicalLevelId)) %>%
   unnest(identifiers, keep_empty=TRUE) %>%
   select(location_id = id,
@@ -47,6 +46,8 @@ locations_clean <- locations %>%
   filter(!is.na(admin_level))
 
 max.admin.level <- max(as.numeric(locations_clean$admin_level))
+
+#create a subset of the data for each admin level
 for (i in 0:max.admin.level) {
   admin_i <- locations_clean %>% filter(admin_level==i)
   names(admin_i) <- paste0("admin_",i,"_",names(admin_i))
@@ -54,15 +55,13 @@ for (i in 0:max.admin.level) {
   admin_i$parent_location_id <- pull(admin_i, paste0("admin_",i,"_parent_location_id"))
   assign(paste0("admin_",i), admin_i)
 }
-admin_0$parent_location_id <- NULL
-for (i in max.admin.level:1) {
-  
-  print(paste0("*****Starting Admin ", i, "*****"))
-  
+admin_0$parent_location_id <- NULL #drop parent location id for admin 0
+
+for (i in max.admin.level:1) { #Start at the most granular level
+  message(paste0("*****Starting Admin ", i, "*****"))
   admin_i <- get(paste0("admin_",i))
-  
-  for (x in 1:i) {
-    print(paste0("*Joining Admin ", i-x, "*"))
+  for (x in 1:i) { # Join in parent location data, and parents of parents, etc
+    message(paste0("*Joining Admin ", i-x, "*"))
     admin_ix <- get(paste0("admin_",i-x))
     admin_i <- left_join(admin_i, admin_ix, by=c("parent_location_id" = "location_id"))
     admin_i$parent_location_id <- admin_i$parent_location_id.y
@@ -79,6 +78,8 @@ for (i in 1:max.admin.level) {
   full <- full %>% bind_rows(admin_i)
 }
 locations_clean <- locations_clean %>% left_join(full, by="location_id")
+rm(list=ls(pattern="admin"), full, i, x)
+
 
 ##########################################################################
 ### Clean & Un-nest CASES
@@ -132,10 +133,10 @@ cases_clean <- cases %>%
          date_updated_at = updated_at,
          date_created_at = created_at) %>%
   
-  # take out other unnecessary vars that are unncessary and may confuse (i.e. was_case for cases)
+  # take out other vars that are unnecessary and may confuse (i.e. was_case for cases)
   select(-c(is_date_of_onset_approximate,
          is_date_of_reporting_approximate,
-         safe_burial,
+         safe_burial, #why is this being removed?
          was_case,
          follow_up_original_start_date,
          deleted,
