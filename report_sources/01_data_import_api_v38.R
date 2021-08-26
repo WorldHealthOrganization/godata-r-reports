@@ -1,20 +1,14 @@
 ###################################################################################################
 
-url <- "http://localhost:3000/"                   # <--------------------- insert instance url here, don't forget the slash at end !
-username <- "fullerj@who.int"                           # <--------------------- insert your username for signing into Go.Data webapp here
-password <- "Monn12345678"                           # <--------------------- insert your password for signing into Go.Data webapp here
-outbreak_id <- "3b5554d7-2c19-41d0-b9af-475ad25a382b"   # <--------------- insert your outbreak ID here! (find it in URL when you have selected outbreak)
-
-# url <- "https://godata-r13.who.int/"                   # <--------------------- insert instance url here, don't forget the slash at end !
-# username <- "godata_api@who.int"                           # <--------------------- insert your username for signing into Go.Data webapp here
-# password <- "godata_api@who"                           # <--------------------- insert your password for signing into Go.Data webapp here
-# outbreak_id <- "3b5554d7-2c19-41d0-b9af-475ad25a382b"   # <--------------- insert your outbreak ID here! (find it in URL when you have selected outbreak)
-
+url <- ""                   # <--------------------- insert instance url here, don't forget the slash at end !
+username <- "xxxxxxx@youremail.com"                           # <--------------------- insert your username for signing into Go.Data webapp here
+password <- "xxxxxxxxx"                           # <--------------------- insert your password for signing into Go.Data webapp here
+outbreak_id <- ""   # <--------------- insert your outbreak ID here! (find it in URL when you have selected outbreak)
 
 ###################################################################################################
 
 # SCRIPT TO PULL IN COLLECTIONS ACROSS ANY GO.DATA INSTANCE #
-# updated 04 August 2021
+# updated 26 August 2021
 
 ###################################################################################################
 # read in from Go.Data API, using your updated log-in credentials by Clicking "Source"
@@ -44,19 +38,22 @@ source(here::here("scripts", "aaa_load_packages.R"))
 #source(here::here("scripts", "set_core_fields.R"))
 
 ###################################################################################################
+# FUNCTION TO GET GO.DATA VERSION NUMBER
+###################################################################################################
+source(here::here("functions", "get_godata_version.R"))
+
+###################################################################################################
 # FUNCTION TO GET ACCESS TOKEN
 ###################################################################################################
-source(here::here("scripts", "get_godata_version.R"))
-
-source(here::here("scripts", "get_access_token.R"))
+source(here::here("functions", "get_access_token.R"))
 print(get_access_token()) #Test to make sure url, username, and password are valid
 
 ###################################################################################################
 # GET CASES
 ###################################################################################################
 
-source(here::here("scripts", "get_cases2.R"))
-source(here::here("scripts", "get_cases.R"))
+source(here::here("functions", "get_cases2.R"))
+source(here::here("functions", "get_cases.R"))
 
 cases <- get_cases2() #For Go.Data Version 2.38.1 or later
 cases <- get_cases()
@@ -65,8 +62,8 @@ cases <- get_cases()
 # GET CONTACTS
 ###################################################################################################
 
-source(here::here("scripts", "get_contacts2.R"))
-source(here::here("scripts", "get_contacts.R"))
+source(here::here("functions", "get_contacts2.R"))
+source(here::here("functions", "get_contacts.R"))
 
 contacts <- get_contacts2()
 contacts <- get_contacts()
@@ -75,8 +72,8 @@ contacts <- get_contacts()
 # GET FOLLOW-UP OF CONTACTS
 ###################################################################################################
 
-source(here::here("scripts", "get_followups2.R"))
-source(here::here("scripts", "get_followups.R"))
+source(here::here("functions", "get_followups2.R"))
+source(here::here("functions", "get_followups.R"))
 
 followups <- get_followups2() #For Go.Data Version 2.38.1 or later
 followups <- get_followups()
