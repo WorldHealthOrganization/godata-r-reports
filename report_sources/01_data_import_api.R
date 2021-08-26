@@ -2,7 +2,7 @@
 
 url <- "https://godata-r13.who.int/"                   # <--------------------- insert instance url here, don't forget the slash at end !
 username <- "godata_api@who.int"                           # <--------------------- insert your username for signing into Go.Data webapp here
-password <- "xxxxxxxxxxxxxxxxxxx"                           # <--------------------- insert your password for signing into Go.Data webapp here
+password <- "godata_api@who"                           # <--------------------- insert your password for signing into Go.Data webapp here
 outbreak_id <- "3b5554d7-2c19-41d0-b9af-475ad25a382b"   # <--------------- insert your outbreak ID here! (find it in URL when you have selected outbreak)
 
 ###################################################################################################
@@ -309,3 +309,4 @@ users <- GET(paste0(url,"api/users"),
 # Remove extra items from the environment, leaving only the data frames from Go.Data
 ######################################################################################################
 rm(username, password, url, outbreak_id, get_access_token)
+
