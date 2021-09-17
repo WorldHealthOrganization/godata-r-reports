@@ -895,29 +895,48 @@ users_clean <- users %>%
 
 
 
-
 ###############################################################
-## Export Dataframes(to be overwritten each time script is run) 
+## Export Raw Dataframes(to be overwritten each time script is run) 
 ###############################################################
 
 ## Specify location to save files
-data_folder <- here::here("data")
+data_folder <- here::here("data", "raw")
 
 ## specify data frames to export
-mydfs<- ls(pattern = "_clean")
-mydfs
+mydfs <- c("cases", "contacts", "contacts_of_contacts", "lab_results", "relationships", "followups", "events", "clusters", "users", "teams", "locations", "reference_data")
+mydfs 
 
-## export files as .csv
-for (i in 1:length(mydfs)){
-  savefile<-paste0(data_folder,"/", mydfs[i], ".csv")
-  write.csv(get(mydfs[i]), file=savefile, fileEncoding = "UTF-8", na="", row.names = F)
-  
-  print(paste("Dataframe Saved:", mydfs[i]))
-}
 
 ## export all as .rds files which we will use for report scripts as it preserves language characters better
 for (i in 1:length(mydfs)){
   savefile<-paste0(data_folder,"/", mydfs[i], ".rds")
   saveRDS(get(mydfs[i]), file=savefile)
   print(paste("Dataframe Saved:", mydfs[i]))
+}
+
+
+###############################################################
+## Export Cleaned Dataframes(to be overwritten each time script is run) 
+###############################################################
+
+## Specify location to save files
+data_folder <- here::here("data", "clean")
+
+## specify data frames to export
+mydfs_clean <- ls(pattern = "_clean")
+mydfs_clean
+
+## export files as .csv
+for (i in 1:length(mydfs_clean)){
+  savefile<-paste0(data_folder,"/", mydfs_clean[i], ".csv")
+  write.csv(get(mydfs_clean[i]), file=savefile, fileEncoding = "UTF-8", na="", row.names = F)
+  
+  print(paste("Dataframe Saved:", mydfs_clean[i]))
+}
+
+## export all as .rds files which we will use for report scripts as it preserves language characters better
+for (i in 1:length(mydfs_clean)){
+  savefile<-paste0(data_folder,"/", mydfs_clean[i], ".rds")
+  saveRDS(get(mydfs_clean[i]), file=savefile)
+  print(paste("Dataframe Saved:", mydfs_clean[i]))
 }
