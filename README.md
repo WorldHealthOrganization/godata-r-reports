@@ -74,7 +74,8 @@ Screenshots below show some of these graphics, such as contact follow-up status 
 ![](https://github.com/WorldHealthOrganization/godata/blob/master/docs/assets/report_screenshot.png)
 
 
-### Tips on extracting additional questionnaire variables
+# Additional R Tips 
+## Extracting and un-nesting additional questionnaire variables
 - the script 02_clean_data_api.R only includes "core variables" (i.e. excluding questionnaire variables) since we wanted these scripts to work without bugs across any variation of Go.Data deployment (as each project may have a different customizable questionnaire). This is why you will see that all fields from API starting with `questionnaireAnswers` are taken out of data frames, for this template starter cleaning script; since we only are un-nesting and cleaning the list fields (like `addresses` or `dateRanges`) that every Go.Data project will have, in separate data frames, and then joining them to the cleaned case data frame.
 
 ```
@@ -112,4 +113,24 @@ cases_clean <- cases %>%
             funs(str_replace(., "questionnaireAnswers", "Q")))
 ```
 
+## Handling "multi-select" question i.e. "select all symptoms that were present"
 
+Say there is a variable `signs_and_symptoms` that is multi-select. When un-nested, it will be in list form.
+You can utilize `unnest_wider` to separate elements (symptoms) of list into separate column, and pivot to get the data into a more workable format.
+
+```
+symptoms <-
+  cases_questionnaire_unnest %>%
+  select(id, questionnaireAnswers.signs_and_symptoms.value) %>%
+  unnest_wider(questionnaireAnswers.signs_and_symptoms.value, names_sep = "_") %>%
+  pivot_longer(-id,
+                names_to = "reported",
+                values_to = "symptom",
+                values_drop_na = TRUE
+                ) %>%
+  mutate(reported = case_when(!is.na(symptom) ~ TRUE,
+                          TRUE ~ FALSE)) %>%
+  pivot_wider(names_from = "symptom",
+              values_from = "reported")
+
+```
