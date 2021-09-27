@@ -17,7 +17,7 @@ pacman::p_load(
   # api
   ###############
   httr,            # handles HTTP requests in R
-  jsonlite         # to parse .json 
+  jsonlite,         # to parse .json 
   
   # project and file management
   #############################
@@ -37,7 +37,7 @@ pacman::p_load(
   
   # statistics  
   ############
-  janitor,      # tables and data cleaning
+  janitor      # tables and data cleaning
 
   
 )

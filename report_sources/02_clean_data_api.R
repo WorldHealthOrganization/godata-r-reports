@@ -20,6 +20,15 @@
 
 ####################################################################################################################################################
 
+# load packages
+# Ensures the package "pacman" is installed
+if (!require("pacman")) install.packages("pacman")
+# Packages available from CRAN
+##############################
+pacman::p_load(
+  tidyverse,    # includes many packages for tidy data wrangling and presentation
+  janitor      # tables and data cleaning
+)
 
 ##########################################################################
 ## CLEAN LOCATIONS
@@ -923,20 +932,20 @@ for (i in 1:length(mydfs)){
 data_folder <- here::here("data", "clean")
 
 ## specify data frames to export
-mydfs_clean <- ls(pattern = "_clean")
-mydfs_clean
+mydfs <- ls(pattern = "_clean")
+mydfs
 
 ## export files as .csv
-for (i in 1:length(mydfs_clean)){
-  savefile<-paste0(data_folder,"/", mydfs_clean[i], ".csv")
-  write.csv(get(mydfs_clean[i]), file=savefile, fileEncoding = "UTF-8", na="", row.names = F)
+for (i in 1:length(mydfs)){
+  savefile<-paste0(data_folder,"/", mydfs[i], ".csv")
+  write.csv(get(mydfs[i]), file=savefile, fileEncoding = "UTF-8", na="", row.names = F)
   
-  print(paste("Dataframe Saved:", mydfs_clean[i]))
+  print(paste("Dataframe Saved:", mydfs[i]))
 }
 
 ## export all as .rds files which we will use for report scripts as it preserves language characters better
-for (i in 1:length(mydfs_clean)){
-  savefile<-paste0(data_folder,"/", mydfs_clean[i], ".rds")
-  saveRDS(get(mydfs_clean[i]), file=savefile)
-  print(paste("Dataframe Saved:", mydfs_clean[i]))
+for (i in 1:length(mydfs)){
+  savefile<-paste0(data_folder,"/", mydfs[i], ".rds")
+  saveRDS(get(mydfs[i]), file=savefile)
+  print(paste("Dataframe Saved:", mydfs[i]))
 }
