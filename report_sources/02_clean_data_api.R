@@ -658,7 +658,7 @@ followups_clean <- followups %>%
   mutate_all(na_if,"") %>%
   
   # clean date formats (TODO: edit this so that we can see time stamps)
-  mutate_at(vars(starts_with("date_")), list(~ as.Date(substr(., 1, 10)))) %>%
+  mutate_at(vars(date), list(~ as.Date(substr(., 1, 10)))) %>%
   mutate(datetime_updated_at = as.POSIXct(datetime_updated_at,format="%Y-%m-%dT%H:%M")) %>%
   mutate(datetime_created_at = as.POSIXct(datetime_created_at,format="%Y-%m-%dT%H:%M")) %>%
   
@@ -840,7 +840,8 @@ cases_clean <- cases_clean %>%
   left_join(exposures_per_case, by = c("id" = "target_person_id")) %>%
   mutate(no_contacts = replace(no_contacts, is.na(no_contacts),0)) %>%
   mutate(no_exposures = replace(no_exposures, is.na(no_exposures),0)) %>%
-  select(id, visual_id, no_contacts, no_exposures, everything())
+  mutate(known_epi_link = !(id %in% relationships_clean$target_person_id)) %>%
+  select(id, visual_id, no_contacts, no_exposures, known_epi_link, everything())
 
 
 ##########################################################################
