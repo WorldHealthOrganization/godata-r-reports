@@ -29,54 +29,72 @@ color:white!important;
 
 
 ```{r setup, include=FALSE}
-library(htmlwidgets)
-library(flexdashboard)
-library(lubridate)
-library(sqldf)
-library(formattable)
-library(kableExtra)
-require(dplyr)
-library(ggplot2)
-library(purrr)
-library(stringr)
-library(viridis)
-library(pals)
-library(RColorBrewer)
-library(qdapTools)
-library(tidyr)
-library(sf)
-library(tidyverse)
+
+pacman::p_load(
+  tidyverse,    # includes many packages for tidy data wrangling and presentation
+  janitor, # tables and data cleaning
+  here,
+  rio,
+  lubridate,
+  htmlwidgets,
+  flexdashboard,
+  formattable,
+  kableExtra,
+  RColorBrewer, 
+  viridis
+)
+
+
+
+# library(tidyverse)
+# library(here)
+# library(rio)
+# library(lubridate)
+# library(htmlwidgets)
+# library(flexdashboard)
+# library(sqldf)
+# library(formattable)
+# library(kableExtra)
+# library(viridis)
+# library(pals)
+# library(RColorBrewer)
+# library(qdapTools)
+# library(sf)
+
 ```
 
 ```{r load_data, include = FALSE}
-current_clean_cases <- here::here("data",
-                                  "cases_clean.rds")
-current_clean_contacts <- here::here("data",
-                                      "contacts_clean.rds")
-current_clean_relationships <- here::here("data",
-                                          "relationships_clean.rds")
-current_clean_followups <- here::here("data",
-                                      "followups_clean.rds")
-current_clean_users <- here::here("data",
-                                      "users_clean.rds")
-current_clean_cases
-cases <- rio::import(current_clean_cases) %>%
+cases <- rio::import(here::here("data", "clean", "cases_clean.rds")) %>%
   as_tibble()
-current_clean_contacts
-contacts <- rio::import(current_clean_contacts) %>%
+
+contacts <- rio::import(here::here("data", "clean", "contacts_clean.rds")) %>%
   as_tibble()
-current_clean_relationships
-relationships <- rio::import(current_clean_relationships) %>%
+
+contacts_of_contacts <- rio::import(here::here("data", "clean", "contacts_of_contacts_clean.rds")) %>%
   as_tibble()
-current_clean_followups
-followups <- rio::import(current_clean_followups) %>%
+
+relationships <- rio::import(here::here("data", "clean", "relationships_clean.rds")) %>%
   as_tibble()
-current_clean_users
-users <- rio::import(current_clean_users) %>%
+
+lab_results <- rio::import(here::here("data", "clean", "lab_results_clean.rds")) %>% as_tibble() %>%
   as_tibble()
-#Import Shapefile 
-#Process Shapefile & join to cases & contacts
-#export shp to .shp folder in data/clean
+
+events <- rio::import(here::here("data", "clean", "events_clean.rds")) %>%
+  as_tibble()
+
+followups <- rio::import(here::here("data", "clean", "followups_clean.rds")) %>%
+  as_tibble()
+
+users <- rio::import(here::here("data", "clean", "users_clean.rds")) %>%
+  as_tibble()
+
+teams <- rio::import(here::here("data", "clean", "teams_clean.rds")) %>%
+  as_tibble()
+
+locations <- rio::import(here::here("data", "clean", "locations_clean.rds")) %>%
+  as_tibble()
+
+
 ```
 
 ```{r define_time_periods, include = FALSE}
@@ -102,8 +120,10 @@ custom_blue0 = "#79C5FF"
 custom_blue = "#004F8B"
 godata_orange = "#ff884d"
 godata_green = "#4db0a0"
+
+
 scale_status <- scale_fill_manual(
-    "Statut",
+    "Status",
     values = c(seen            = "#71CA97",
                not_seen        = "#5d6d75",
                not_performed   = "#D3C9C6",
@@ -111,17 +131,19 @@ scale_status <- scale_fill_manual(
                seen_with_signs = "#E94B25",
                missed          = "#020202"),
                 
-    labels = c(seen            = "Vu",
-               not_seen        = "Absent",
-               not_performed   = "Pas d'action",
-               seen_no_signs   = "Vu sans signes",
-               seen_with_signs = "Vu avec signes",
-               missed          = "Décédé"))
+    labels = c(seen            = "Seen",
+               not_seen        = "Not Seen",
+               not_performed   = "Not Performed",
+               seen_no_signs   = "Seen OK",
+               seen_with_signs = "Seen Not OK",
+               missed          = "Missed"))
+
 statuscols <- c(missed = 0, 
                 seen_with_signs = 0, 
                 seen_no_signs = 0,
                 not_seen = 0,
                 not_performed = 0)
+
 completioncols <- c(completed = 0,
                     partial = 0,
                     not_attempted = 0)
@@ -142,134 +164,102 @@ scale_risk_factors <- scale_fill_manual(
   labels = c("Yes",
              "No",
              "Unknown"))
+
+
+scale_classification <- scale_fill_manual(
+  "Classification",
+  values = c(CONFIRMED             = "#F55927",
+             NOT_A_CASE_DISCARDED  = "#DADAD9",
+             PROBABLE              = "#5C77B6",
+             SUSPECT               = "#6CBBC6"),
+  
+  labels = c(CONFIRMED             = "Confirmed",
+             NOT_A_CASE_DISCARDED  = "Not A Case",
+             PROBABLE              = "Probable",
+             SUSPECT               = "Suspect"))
+
+
+scale_test <- scale_fill_manual(
+  "Tests",
+  values = c(POSITIVE        = "#F55927",
+             NEGATIVE    = "#DADAD9",
+             PENDING = "#F6DDCC",
+             INCONCLUSIVE = "#FBEEE6"
+             
+  ),
+  
+  labels = c(POSITIVE        = "Positive",
+             NEGATIVE     = "Negative",
+             PENDING     = "Pending",
+             INCONCLUSIVE     = "Unknown/Inconclusive"
+             
+  ))
+
+
+scale_day <- ggplot2::scale_x_date(breaks = "3 days",
+                                   expand=c(0,0),
+                                   date_label = format("%d %b %Y"))
+
 ```
 
 ```{r case_linelist, include = FALSE}
 ### data collectors
-data_collector_names <- users %>%
-  mutate(data_collector_name = paste0(firstname, " ", lastname)) %>%
-  select(uuid,data_collector_name)
-### case linelist core vars that are not required
-### here, we have 19 essential vars that are not required....
-case_linelist_essential <- cases %>%
-  # filter(classification != "NOT_A_CASE_DISCARDED") %>%
-  # mutate(source_case_known = case_when(
-  #             is.na(source_visualid) ~ FALSE,
-  #             source_visualid == "" ~ FALSE,
-  #             TRUE ~ TRUE)) %>%
-  mutate_if(is_character, funs(na_if(.,""))) %>%
-  select(
-        uuid,
-        # case_id,
-        # classification,
-        # gender,
-        age,
-        # age_class,
-        occupation,
-        pregnancy_status,
-        # was_contact,
-        risk_level,
-        # risk_reason,
-        outcome = outcome_id,
-        # contacts_per_case,
-        # source_case_known,
-        source_case_id = source_visualid,
-        date_of_last_contact,
-        # date_become_case,
-        date_of_reporting,
-        # date_of_data_entry,
-        date_of_infection,
-        date_of_onset,
-        admin_1_name,
-        admin_2_name,
-        admin_3_name,
-        # lat,
-        # long,
-        address,
-        telephone,
-        email,
-        city,
-        postal_code,
-        hospitalization_status,
-        isolation_status,
-        createdBy
-        ) %>%
-  left_join(data_collector_names, by = c("createdBy" = "uuid")) %>%
-  select(-createdBy)
-case_linelist_essential$total_na <- 
-  apply(case_linelist_essential,
+user_namelist <- users %>%
+  mutate(user_name = paste0(first_name, " ", last_name)) %>%
+  select(id,user_name)
+
+
+cases$total_na <- 
+  apply(cases,
                 MARGIN = 1, function(x) sum(is.na(x))) 
+
 # calculate % NA of required
-case_linelist_essential <- case_linelist_essential %>%
-  mutate(perc_na = round((total_na / 20)*100,digits=1))
+case_linelist <- cases %>%
+  mutate(perc_na = round((total_na / ncol(cases))*100,digits=1)) %>%
+  left_join(user_namelist, by =c("updated_by" = "id")) 
 ```
 
 
 
 ```{r contact_linelist, include = FALSE}
+
 ## FUs, last visit per contact, use for contact linelist to give snapshot
 fu_subset <- followups %>%
-  # filter(date_of_followup == prev_1_date) %>%
-  arrange(contact_uuid, desc(date_of_followup)) %>%
-  distinct(contact_uuid, .keep_all = TRUE) 
+  arrange(contact_id, desc(date)) %>%
+  distinct(contact_id, .keep_all = TRUE)
+
+
 ## contact linelist, with info about last visit and who turn into cases 
 ## all contacts registered historically, not just currently active contacts
-contact_linelist_essential <- contacts %>%
-    select(
-         uuid, 
-         contact_id,
-         contact_status,
-         gender,
-         age,
-         # age_class,
-         occupation,
-         pregnancy_status,
-         risk_level,
-         date_of_reporting,
-         date_of_last_contact,
-         # date_of_followup_start,
-         # date_of_followup_end,
-         # date_become_case,
-         admin_1_name,
-         admin_2_name,
-         admin_3_name,
-         address,
-         city,
-         postal_code,
-         telephone,
-         email,
-         createdBy
-         
-         
-        ) %>%
-  left_join(data_collector_names, by = c("createdBy" = "uuid")) %>%
-  select(-createdBy)
-  contact_linelist_essential$total_na <- 
-  apply(contact_linelist_essential,
-                MARGIN = 1, function(x) sum(is.na(x))) 
-contact_linelist_essential <- contact_linelist_essential %>%
-  mutate(perc_na = round((total_na / 20)*100,digits=1))
+contact_linelist <- contacts %>%
+  left_join(user_namelist, by = c("updated_by" = "id")) 
+
+
 contacts_seen_ever <- followups %>%
   filter(followup_status == "SEEN_OK" | followup_status == "SEEN_NOT_OK") %>%
-  arrange(contact_uuid, desc(date_of_followup)) %>%
-  distinct(contact_uuid, .keep_all = TRUE) %>%
-  select(uuid = contact_uuid,
-         contact_id, 
-         date_of_last_followup_seen = date_of_followup)
+  arrange(contact_id, desc(date)) %>%
+  distinct(contact_id, .keep_all = TRUE) %>%
+  select(contact_id,
+         contact_visual_id, 
+         date_of_last_followup_seen = date)
+
+
+
 contacts_last_visit <- followups %>%
-  arrange(contact_uuid, desc(date_of_followup)) %>%
-  distinct(contact_uuid, .keep_all = TRUE) %>%
-  select(uuid = contact_uuid,
-         contact_id, 
-         date_of_last_followup = date_of_followup,
+  arrange(contact_id, desc(date)) %>%
+  distinct(contact_id, .keep_all = TRUE) %>%
+  select(contact_id,
+         contact_visual_id, 
+         date_of_last_followup = date,
          status_of_last_followup = followup_status)
-# could do same thing for contacts vaccinated ever
+
+
   
-contact_linelist_status <- contact_linelist_essential %>%
-  # filter(contact_status == "UNDER_FOLLOW_UP") %>%
-  left_join(select(contacts_seen_ever, uuid, date_of_last_followup_seen), by = "uuid") %>%
-  left_join(select(contacts_last_visit, uuid, date_of_last_followup, status_of_last_followup), by = "uuid") %>%
-  mutate_if(is_character, funs(na_if(.,""))) %>%
+contact_linelist_status <- contact_linelist %>%
+  left_join(select(contacts_seen_ever, contact_id, date_of_last_followup_seen), by = c("id" = "contact_id")) %>%
+  left_join(select(contacts_last_visit, contact_id, date_of_last_followup, status_of_last_followup), by = c("id" = "contact_id")) %>%
+
+  # mutate_if(is_character, funs(na_if(.,""))) %>%
   mutate(days_since_followup_seen = difftime(database_date,
                                         date_of_last_followup_seen, 
                                         units = "day")) %>%
@@ -304,7 +294,7 @@ contact_linelist_status <- contact_linelist_essential %>%
   mutate(first_week_followup = case_when(
                                   days_since_exp < 8 ~ TRUE,
                                   TRUE ~ FALSE)) %>%
-  mutate(never_seen = !(uuid %in% contacts_seen_ever$uuid)) 
+  mutate(never_seen = !(id %in% contacts_seen_ever$contact_id)) 
 ```
 
 
@@ -374,10 +364,10 @@ valueBox(paste0(perc_from_known_contact,"%"),
 ### Cases Died / Recovered
 ```{r cases_died, echo = FALSE}
 cases_died <- cases %>%
-  filter(outcome_id == "DECEASED") %>%
+  filter(outcome == "DECEASED") %>%
   count()
 cases_recovered <- cases %>%
-  filter(outcome_id == "RECOVERED") %>%
+  filter(outcome == "RECOVERED") %>%
   count()
 valueBox(paste0(cases_died," / ",cases_recovered),
          caption = "Cases died / recovered",
@@ -388,10 +378,10 @@ valueBox(paste0(cases_died," / ",cases_recovered),
 ### Active Contacts
 
 ```{r total_active_contacts_reg, echo = FALSE}
-total_contacts_reg <- contact_linelist_status %>%
+total_contacts_reg <- contacts %>%
   count() 
-contacts_active <- contact_linelist_status %>%
-  filter(contact_status == "UNDER_FOLLOW_UP") %>%
+contacts_active <- contacts %>%
+  filter(follow_up_status == "UNDER_FOLLOW_UP") %>%
   count() 
 valueBox(contacts_active, 
          icon = "fa-users",
@@ -417,7 +407,7 @@ valueBox(contacts_reg_last7d,
 
 ```{r contacts_active_followed, echo = FALSE}
 contacts_active_followed <- contact_linelist_status %>%
-  filter(contact_status == "UNDER_FOLLOW_UP") %>%
+  filter(follow_up_status == "UNDER_FOLLOW_UP") %>%
   filter(seen_with_signs | seen_without_signs) %>%
   count()
 perc_contacts_active_followed <-
@@ -430,7 +420,7 @@ valueBox(paste0(perc_contacts_active_followed,"%"),
 
 ```{r contacts_active_ltfu, echo = FALSE}
 contacts_active_ltfu <- contact_linelist_status %>%
-  filter(contact_status == "UNDER_FOLLOW_UP") %>%
+  filter(follow_up_status == "UNDER_FOLLOW_UP") %>%
   filter(lost_to_followup) %>%
   count()
 perc_contacts_active_ltfu <-
@@ -450,6 +440,7 @@ Row {.tabset data-height=875}
 case_unknown_age <- sum(cases$age_class == "unknown")
 case_unknown_sex <- sum(is.na(cases$gender))
 case_with_age_and_sex <- sum(!is.na(cases$gender) & cases$age_class != "unknown") 
+
 #############################################################
 ### case age breakdown over time
 ############################################################
