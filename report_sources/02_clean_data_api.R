@@ -130,7 +130,8 @@ cases_dateranges_history_clean <- cases %>%
   select_at(vars(id, visualId, starts_with("dateRanges"),-dateRanges_dateRanges), tolower) %>%
   mutate(dateranges_typeid = sub(".*TYPE_", "", dateranges_typeid)) %>%
   mutate(dateranges_centername = sub(".*NAME_", "", dateranges_centername)) %>%
-  mutate_at(vars(dateranges_startdate, dateranges_enddate), as.Date) 
+  mutate_at(vars(dateranges_startdate, dateranges_enddate), as.Date) %>%
+  select_if(Negate(is.list)) 
 
 
 # Unnest Vaccination History, where vaccination is complete
