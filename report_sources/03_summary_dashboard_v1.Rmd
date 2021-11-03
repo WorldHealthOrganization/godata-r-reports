@@ -47,8 +47,6 @@ pacman::p_load(
 )
 
 
-output_dir <- "../report_outputs"
-
 
 ```
 
@@ -191,7 +189,7 @@ scale_day <- ggplot2::scale_x_date(breaks = "3 days",
 
 ```
 
-```{r case_linelist, include = FALSE}
+```{r contact_linelist_status, include = FALSE}
 
 # user list to join
 user_namelist <- users %>%
@@ -263,7 +261,11 @@ contact_linelist_status <- contacts %>%
   mutate(never_seen = !(id %in% contacts_seen_ever$contact_id)) 
 
 
-# set totals for value boxes
+```
+
+```{r value_boxes, include = FALSE}
+
+## Total Cases
 total_cases_reg <- cases %>%
   filter(classification != "NOT_A_CASE_DISCARDED") %>%
   count()
@@ -384,6 +386,7 @@ perc_contacts_active_ltfu <-
 
 
 ```
+
 
 
 DEMOGRAPHICS {data-icon="fa-users"} 
@@ -1672,6 +1675,33 @@ USERS / ADMINISTRATION {data-icon="fa-globe"}
 
 ```{r user_details, echo = FALSE}
 ### here put a formattable with users, area, last login, total records submitted, roles
+  
+tab_users <- users %>%
+    mutate(user_name = paste0(first_name, " ", last_name)) %>%
+    arrange(desc(datetime_last_login)) %>%
+  # add in concat of roles columns
+  select(
+    `Name` = user_name,
+    # add team name
+    `Email` = email,
+    `Institution` = institution_name,
+    `Last Login` = datetime_last_login,
+    `User Since` = datetime_created_at
+    # add number of total cases created
+    # add number of current "active" cases 
+    # add number of total contacts created
+    # add number of current "active" contacts
+    ) 
+
+formattable_tab_users <-tab_users %>%
+  
+  kable("html", escape = F, align =c("l","c","c","c","c")) %>%
+  kable_styling("hover", full_width = FALSE) %>%
+  add_header_above(c(" " = 3, 
+                     "Recent Activity" = 2))
+
+formattable_tab_users
+
 ```
 
 ```{r resources, echo = FALSE}

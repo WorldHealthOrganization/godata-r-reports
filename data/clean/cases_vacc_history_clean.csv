@@ -1,4 +1,6 @@
-"id","visualid","vaccinesreceived_vaccine","vaccinesreceived_date","vaccinesreceived_status","vaccinesreceived_id"
-"937645c9-54d4-478c-bd17-47d621a58b95","CON0014","COVID_19_1ST_DOSE",2021-06-11,"VACCINATED",
-"8ea4b2a4-39c6-45be-bc04-cfcc74397ed6","CAS0024","COVID_19_1ST_DOSE",2021-05-28,"VACCINATED",
-"8ea4b2a4-39c6-45be-bc04-cfcc74397ed6","CAS0024","COVID_19_2ND_DOSE",2021-06-28,"VACCINATED",
+"id","visualid","vaccinesreceived_vaccine","vaccinesreceived_status","vaccinesreceived_date","vaccinesreceived_id"
+"20c4a7a4-6113-4b8b-bf95-4403406b4c1e","CAS0025","COVID_19_1ST_DOSE","VACCINATED_FRACTIONAL_DOSE",,
+"20c4a7a4-6113-4b8b-bf95-4403406b4c1e","CAS0025","COVID_19_2ND_DOSE","VACCINATED_FULL_DOSE",2021-11-03,
+"937645c9-54d4-478c-bd17-47d621a58b95","CON0014","COVID_19_1ST_DOSE","VACCINATED",2021-06-11,
+"8ea4b2a4-39c6-45be-bc04-cfcc74397ed6","CAS0024","COVID_19_1ST_DOSE","VACCINATED",2021-05-28,
+"8ea4b2a4-39c6-45be-bc04-cfcc74397ed6","CAS0024","COVID_19_2ND_DOSE","VACCINATED",2021-06-28,

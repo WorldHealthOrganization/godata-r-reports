@@ -896,6 +896,9 @@ users_clean <- users %>%
   
   unnest_wider(role_ids, names_sep = "_") %>%
   
+  #  truncate responses of categorical vars so easier to read
+  mutate(institution_name = sub(".*NAME_", "", institution_name)) %>%
+  
   
   # organize order of vars, only bring in what we need, take away confusing vars
   select(
