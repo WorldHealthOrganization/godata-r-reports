@@ -1,5 +1,5 @@
 ---
-title: "COVID-19 Summary Dashboard - DEMO Report V1"
+title: "Go.Data Summary Dashboard - DEMO V1"
 date: "`r format(Sys.time(), '%A %d %B %Y')`"
 output:
     flexdashboard::flex_dashboard:
