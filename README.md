@@ -36,9 +36,11 @@ TIP: In order to obtain your outbreak ID, navigate to View Outbreak in Go.Data a
 
 You then install `godataR` by running 
 
-````
+```
 #Install package
+
 devtools::install_github("WorldHealthOrganization/godataR")
+
 ```
 
 ## Step 2. Run data import script with your Go.Data credentials 
