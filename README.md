@@ -11,27 +11,22 @@ Below we will outline some instructions for obtaining your data directly from yo
 
 ## Step 1. Replicate folder directory to your local machine
 In order for the scripts to work it is essential for you to have the same folder hierarchy and contents. Your folder directory should include:
-- data (_a place for csv and rds file outputs to be stored_)
-- scripts (_containing starter scripts and parameters, like necessary packages to be loaded or formatting, that are sourced in the report sources scripts_).
+- data (_a place for csv and rds file outputs to be stored, subfolders of "clean" and "raw"_)
 - report_sources (_contains script to import; script to clean; script to product dashboard_)
 - reprt_outputs (_a place for dashboard outputs to be stored_)
 - R project (_double click here to open R; so that each time your working directory is properly set_)
 
 ![](https://github.com/WorldHealthOrganization/godata/blob/master/docs/assets/R_folder_hierarchy.PNG)
 
-Please be sure that you check your folder contents are up to date with what is living on Github. If you are able to connect dynmaically to Github in R via Git to pull most recent version, this is preferred. If you don't feel comfrotable with this, you can simply copy/paste the script contents into your local folder hierarchy. The rationale behind this folder hierarchy and set-up was borrowed from RECON's _reportfactory_ templates repository (https://github.com/reconhub/report_factories_templates) and has been simplified for our purposes.
+Please be sure that you check your folder contents are up to date with what is living on Github. If you are able to connect dynamically to Github in R via Git to pull most recent version, this is preferred. If you don't feel comfortable with this, you can simply copy/paste the script contents into your local folder hierarchy. The rationale behind this folder hierarchy and set-up was borrowed from RECON's _reportfactory_ templates repository (https://github.com/reconhub/report_factories_templates) and has been simplified for our purposes.
 
-## Step 2. Run data import script with your Go.Data credentials 
-Running this script will import data into R environment from your Go.Data API.
+## Step 2. Download godataR and set credentials 
 
-Open up R project by double-clicking on godata.Rroj. 
+Open up R project by double-clicking on godata.Rroj
 
-Navigate to 01_data_import_api.R in the *report_sources* folder and click to open it in your R console. 
+Navigate to `00_set_credentials.R` in the *report_sources* folder and click to open it in your R console. 
 
-![](https://github.com/WorldHealthOrganization/godata/blob/master/docs/assets/R_report_sources.PNG)
-![](https://github.com/WorldHealthOrganization/godata/blob/master/docs/assets/R_data_import_api.PNG)
-
-At the top of the script, fill in the appropriate URL, your Go.Data username and password, and outbreak_id of interest. 
+Where indicated in the script, fill in the appropriate URL, your Go.Data username and password, and outbreak_id of interest. 
 
 ![](https://github.com/WorldHealthOrganization/godata/blob/master/docs/assets/R_script_credentials.PNG)
 
@@ -39,8 +34,24 @@ TIP: In order to obtain your outbreak ID, navigate to View Outbreak in Go.Data a
 
 ![](https://github.com/WorldHealthOrganization/godata/blob/master/docs/assets/R_outbreak_id.PNG)
 
+You then install `godataR` by running 
+
+````
+#Install package
+devtools::install_github("WorldHealthOrganization/godataR")
+```
+
+## Step 2. Run data import script with your Go.Data credentials 
+
+Running this script will import data into R environment from your Go.Data API.
+
+Navigate to 01_data_import_api.R in the *report_sources* folder and click to open it in your R console. 
+
+![](https://github.com/WorldHealthOrganization/godata/blob/master/docs/assets/R_report_sources.PNG)
+![](https://github.com/WorldHealthOrganization/godata/blob/master/docs/assets/R_data_import_api.PNG)
+
+
 Run the script by clicking "Source".
-NOTE: you will receive an error if you do not have proper contents in the *scripts* (necessary for downloading pre-requisite packages & setting core fields).
 
 Once the script has succesfully completed, you should have created several data frames in your R global environment that will be used in subsequent cleaning scripts.
 
@@ -49,23 +60,28 @@ Once the script has succesfully completed, you should have created several data 
 NOTE: please switch your language to English in your Go.Data instance before running this API script, to ensure core data elements are all brought back in a consistent form.
 
 ## Step 3. Run cleaning scripts and export to excel 
+
 The dataframes as retrieved straight from API can contain some nested arrays in lists; for fields that can have multiple responses for one case or contact (i.e. more than one address can be registered if person has moved; repeat hospitalizations can be recorded; followUp history is stored). The cleaning script helps to properly un-nest relevant fields and do some basic data manipulation to these data frames before exporting to .CSV (or prepping for additional analysis in R).
 
-Navigate to *02_clean_data_api.R*, (also in *report_sources folder*), click to open, and run script.
+Navigate to *02_clean_data_api.R*, (also in *report_sources folder*).
 
 ![](https://github.com/WorldHealthOrganization/godata/blob/master/docs/assets/R_clean_data_api.PNG)
 
-This will result in the following cleaned .csv files saved in the data foler, with format matching the pattern below, updated each time you run the script to contain the most recent data.
+Run the script by clicking "Source".
+
+This will result in the cleaned .csv files data "clean"" folder, with format matching the pattern below, updated each time you run the script to contain the most recent data.
 - contacts_clean.csv
 - cases_clean.csv
 - etc 
 
-You will also have .rds files in the data folder (i.e. contacts_clean.rds; cases_clean.rds) This condensed format will be used for subsequent R dashboards scripts since it is more performant and perserves language characters better.
+You will also have .rds files in the data "clean" folder (i.e. contacts_clean.rds; cases_clean.rds) This condensed format will be used for subsequent R dashboards scripts since it is more performant and perserves language characters better.
+
+For good measure, you will also have .rds files in the data "raw" folder (i.e. contacts.rds; cases.rds) that mimic exactly as they were retrieved from API, if you needed these for verification or further use.
 
 NOTE: these cleaning scripts focus on the CORE data variables and not custom questionnaire variables, as questionnaires are configurable for each country or institution deploying Go.Data. No core data elements (those living outside of questionnaires) should need updating in terms of coding; however, if you would like to pull in additional questionnaire data elements you may need to slightly modify this script to accommodate these extra fields. Additionally, it is possible that your location hierarchy or team structure may vary in your deployment setting (I.e. supervisor registered at a different admin level) so changes may need to be made to the location cleaning scripts. Please see the section _Further tips on data extraction/cleaning from API_ at the bottom fo this SOP for more details.
 
 ## Step 4. Utilize cleaned datasets for additional analysis inside or outside of R
-The cleaned datasets will now be much easier to do additional analysis whether inside or outside of R. 
+The cleaned data-sets will now be much easier to do additional analysis whether inside or outside of R. 
 
 We have created some sample scripts to get you started in some basic dashboard analyses (see, for example, 03_daily_summary_dashboard.Rmd for a ready-made HTML dashboard that will give you stats on a range of operational metrics to be monitored by supervisor and contact tracer on a daily basis). 
 
