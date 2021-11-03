@@ -13,7 +13,6 @@ Below we will outline some instructions for obtaining your data directly from yo
 In order for the scripts to work it is essential for you to have the same folder hierarchy and contents. Your folder directory should include:
 - data (_a place for csv and rds file outputs to be stored, subfolders of "clean" and "raw"_)
 - report_sources (_contains script to import; script to clean; script to product dashboard_)
-- reprt_outputs (_a place for dashboard outputs to be stored_)
 - R project (_double click here to open R; so that each time your working directory is properly set_)
 
 ![](https://github.com/WorldHealthOrganization/godata/blob/master/docs/assets/R_folder_hierarchy.PNG)

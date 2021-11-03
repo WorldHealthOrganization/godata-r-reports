@@ -41,25 +41,14 @@ pacman::p_load(
   formattable,
   kableExtra,
   RColorBrewer, 
-  viridis
+  viridis,
+  qdapTools,
+  incidence2
 )
 
 
+output_dir <- "../report_outputs"
 
-# library(tidyverse)
-# library(here)
-# library(rio)
-# library(lubridate)
-# library(htmlwidgets)
-# library(flexdashboard)
-# library(sqldf)
-# library(formattable)
-# library(kableExtra)
-# library(viridis)
-# library(pals)
-# library(RColorBrewer)
-# library(qdapTools)
-# library(sf)
 
 ```
 
@@ -203,38 +192,17 @@ scale_day <- ggplot2::scale_x_date(breaks = "3 days",
 ```
 
 ```{r case_linelist, include = FALSE}
-### data collectors
+
+# user list to join
 user_namelist <- users %>%
   mutate(user_name = paste0(first_name, " ", last_name)) %>%
   select(id,user_name)
 
-
-cases$total_na <- 
-  apply(cases,
-                MARGIN = 1, function(x) sum(is.na(x))) 
-
-# calculate % NA of required
-case_linelist <- cases %>%
-  mutate(perc_na = round((total_na / ncol(cases))*100,digits=1)) %>%
-  left_join(user_namelist, by =c("updated_by" = "id")) 
-```
+team_namelist <- teams %>%
+  select(id, team_name = name)
 
 
-
-```{r contact_linelist, include = FALSE}
-
-## FUs, last visit per contact, use for contact linelist to give snapshot
-fu_subset <- followups %>%
-  arrange(contact_id, desc(date)) %>%
-  distinct(contact_id, .keep_all = TRUE)
-
-
-## contact linelist, with info about last visit and who turn into cases 
-## all contacts registered historically, not just currently active contacts
-contact_linelist <- contacts %>%
-  left_join(user_namelist, by = c("updated_by" = "id")) 
-
-
+# visit status from followups
 contacts_seen_ever <- followups %>%
   filter(followup_status == "SEEN_OK" | followup_status == "SEEN_NOT_OK") %>%
   arrange(contact_id, desc(date)) %>%
@@ -242,8 +210,6 @@ contacts_seen_ever <- followups %>%
   select(contact_id,
          contact_visual_id, 
          date_of_last_followup_seen = date)
-
-
 
 contacts_last_visit <- followups %>%
   arrange(contact_id, desc(date)) %>%
@@ -253,48 +219,170 @@ contacts_last_visit <- followups %>%
          date_of_last_followup = date,
          status_of_last_followup = followup_status)
 
-
-  
-contact_linelist_status <- contact_linelist %>%
+contact_linelist_status <- contacts %>%
+  left_join(user_namelist, by = c("updated_by" = "id")) %>%
+  left_join(team_namelist, by = c("follow_up_team_id" = "id")) %>%
   left_join(select(contacts_seen_ever, contact_id, date_of_last_followup_seen), by = c("id" = "contact_id")) %>%
   left_join(select(contacts_last_visit, contact_id, date_of_last_followup, status_of_last_followup), by = c("id" = "contact_id")) %>%
-
+  
   # mutate_if(is_character, funs(na_if(.,""))) %>%
   mutate(days_since_followup_seen = difftime(database_date,
-                                        date_of_last_followup_seen, 
-                                        units = "day")) %>%
+                                             date_of_last_followup_seen, 
+                                             units = "day")) %>%
   mutate(days_since_exp = difftime(database_date,
                                    date_of_last_contact, 
                                    units = "day")) %>%
   mutate(seen_with_signs = case_when(
-                                  status_of_last_followup == "SEEN_NOT_OK" ~ TRUE,
-                                # & date_of_last_followup == database_date ~ TRUE,
-                                  TRUE ~ FALSE)) %>%
+    status_of_last_followup == "SEEN_NOT_OK" ~ TRUE,
+    # & date_of_last_followup == database_date ~ TRUE,
+    TRUE ~ FALSE)) %>%
   mutate(seen_without_signs = case_when(
-                                  status_of_last_followup == "SEEN_OK" ~ TRUE,
-                                # & date_of_last_followup == database_date ~ TRUE,
-                                  TRUE ~ FALSE)) %>%
+    status_of_last_followup == "SEEN_OK" ~ TRUE,
+    # & date_of_last_followup == database_date ~ TRUE,
+    TRUE ~ FALSE)) %>%
   mutate(missed = case_when(
-                                  status_of_last_followup == "MISSED" ~ TRUE,
-                                # & date_of_last_followup == database_date ~ TRUE,
-                                  TRUE ~ FALSE)) %>%
+    status_of_last_followup == "MISSED" ~ TRUE,
+    # & date_of_last_followup == database_date ~ TRUE,
+    TRUE ~ FALSE)) %>%
   mutate(no_action = case_when(
-                                  (status_of_last_followup == "NOT_ATTEMPTED" |
-                                    status_of_last_followup == "NOT_PERFORMED" ) ~ TRUE,
-                                # & date_of_last_followup == database_date ~ TRUE,
-                                  TRUE ~ FALSE)) %>%
+    (status_of_last_followup == "NOT_ATTEMPTED" |
+       status_of_last_followup == "NOT_PERFORMED" ) ~ TRUE,
+    # & date_of_last_followup == database_date ~ TRUE,
+    TRUE ~ FALSE)) %>%
   # mutate(vaccine = (contact_status_linelist$contact_id %in% contacts_vaccinated_ever$contact_id)) %>%
   mutate(lost_to_followup = case_when(
-                                  days_since_followup_seen >= 3 ~ TRUE,
-                                  TRUE ~ FALSE)) %>%
+    days_since_followup_seen >= 3 ~ TRUE,
+    TRUE ~ FALSE)) %>%
   mutate(second_week_followup = case_when(
-                                  days_since_exp < 15
-                                  & days_since_exp >= 8 ~ TRUE,
-                                  TRUE ~ FALSE)) %>%
+    days_since_exp < 15
+    & days_since_exp >= 8 ~ TRUE,
+    TRUE ~ FALSE)) %>%
   mutate(first_week_followup = case_when(
-                                  days_since_exp < 8 ~ TRUE,
-                                  TRUE ~ FALSE)) %>%
+    days_since_exp < 8 ~ TRUE,
+    TRUE ~ FALSE)) %>%
   mutate(never_seen = !(id %in% contacts_seen_ever$contact_id)) 
+
+
+# set totals for value boxes
+total_cases_reg <- cases %>%
+  filter(classification != "NOT_A_CASE_DISCARDED") %>%
+  count()
+
+
+## New cases, last 7 days
+cases_reg_last7d <- cases %>%
+  filter(date_of_reporting >= prev_7_date) %>%
+  count()
+
+cases_reg_prev_last7d <- cases %>%
+  filter(date_of_reporting >= before_prev_7_date & date_of_reporting < prev_7_date) %>%
+  count()
+
+perc_change_7d <- round(((cases_reg_last7d - cases_reg_prev_last7d) / cases_reg_prev_last7d)*100, digits = 0) 
+perc_change_7d <- sprintf("%+3.0f %%", perc_change_7d)
+
+# Total cases CONFIRMED
+total_cases_confirmed <- cases %>%
+  filter(classification == "CONFIRMED") %>%
+  count()
+
+# Total cases PROBABLE
+total_cases_probable <- cases %>%
+  filter(classification == "PROBABLE") %>%
+  count()
+
+# Total cases SUSPECT
+total_cases_suspect <- cases %>%
+  filter(classification == "SUSPECT") %>%
+  count()
+
+# Cases from contact list
+cases_from_known_contact <- cases %>%
+  filter(was_contact) %>%
+  count()
+
+cases_from_known_contact_last7d <- cases %>%
+  filter(date_of_reporting >= prev_7_date) %>%
+  filter(was_contact) %>%
+  count()
+
+perc_from_known_contact <-
+  round((cases_from_known_contact / total_cases_reg)*100, digits = 1)
+
+perc_from_known_contact_last7d <-
+  round((cases_from_known_contact_last7d / cases_reg_last7d)*100, digits = 1)
+
+# Cases died / recovered
+cases_died <- cases %>%
+  filter(outcome == "DECEASED") %>%
+  count()
+
+cases_recovered <- cases %>%
+  filter(outcome == "RECOVERED") %>%
+  count()
+
+# Cases hospitalized
+cases_hospitalized <- cases %>%
+  filter(hospitalized) %>%
+  count()
+
+# Cases with No Epi Link
+cases_no_epi_link <- cases %>%
+  filter(!known_epi_link) %>%
+  count()
+
+# Cases with No Epi Link, last 7d
+cases_no_epi_link_last7d <- cases %>%
+  filter(date_of_reporting >= before_prev_7_date & date_of_reporting < prev_7_date) %>%
+  filter(!known_epi_link) %>%
+  count()
+
+# Cases 0 contacts
+cases_no_contacts <- cases %>%
+  filter(no_contacts == 0) %>%
+  count()
+
+
+# Active contacts
+total_contacts_reg <- contact_linelist_status %>%
+  count() 
+
+contacts_active <- contact_linelist_status %>%
+  filter(follow_up_status == "UNDER_FOLLOW_UP") %>%
+  count() 
+
+# New contacts listed, last 7 days
+contacts_reg_last7d <- contacts %>%
+  filter(date_of_reporting >= prev_7_date) %>%
+  count()
+
+contacts_reg_prev_last7d <- contacts %>%
+  filter(date_of_reporting >= before_prev_7_date & date_of_reporting < prev_7_date) %>%
+  count()
+
+perc_change_7d_contacts <- round(((contacts_reg_last7d - contacts_reg_prev_last7d) / contacts_reg_prev_last7d)*100, digits = 0) 
+perc_change_7d_contacts <- sprintf("%+3.0f %%", perc_change_7d_contacts)
+
+# Contacts followed
+contacts_active_followed <- contact_linelist_status %>%
+  filter(follow_up_status == "UNDER_FOLLOW_UP") %>%
+  filter(seen_with_signs | seen_without_signs) %>%
+  count()
+
+perc_contacts_active_followed <-
+  round((contacts_active_followed/contacts_active)*100,digits = 1)
+
+# Contacts lost to follow up
+contacts_active_ltfu <- contact_linelist_status %>%
+  filter(follow_up_status == "UNDER_FOLLOW_UP") %>%
+  filter(lost_to_followup) %>%
+  count()
+
+perc_contacts_active_ltfu <-
+  round((contacts_active_ltfu/contacts_active)*100,digits = 1)
+
+
+
 ```
 
 
@@ -306,8 +394,7 @@ Row {data-height=125}
 
 ### Total Cases
 ```{r total_cases_reg, echo = FALSE}
-total_cases_reg <- cases %>%
-  count()
+
 valueBox(total_cases_reg, 
          icon = "fa-user-plus", 
          caption = "Total Confirmed Cases",
@@ -316,73 +403,55 @@ valueBox(total_cases_reg,
 
 ### New Cases, last 7d
 ```{r cases_reg_last7d, echo = FALSE}
-cases_reg_last7d <- cases %>%
-  filter(date_of_reporting >= prev_7_date) %>%
-  count()
-cases_reg_prev_last7d <- cases %>%
-  filter(date_of_reporting >= before_prev_7_date & date_of_reporting < prev_7_date) %>%
-  count()
-perc_change_7d <- round(((cases_reg_last7d - cases_reg_prev_last7d) / cases_reg_prev_last7d)*100, digits = 0) 
-perc_change_7d <- sprintf("%+3.0f %%", perc_change_7d)
+
+
 valueBox(cases_reg_last7d, 
          caption = "New Cases, Last 7d",
          color = custom_grey0)
-# valueBox(cases_reg_last7d, 
-#          caption = paste0("New Cases, Last 7d (%",perc_change_7d,"change vs. last week)"),
-#          color = ifelse(perc_change_7d >=1, custom_green, "#E94B25"))
+
 ```
 
 
 ### Cases from Contact List
 ```{r perc_from_known_contact, echo = FALSE}
-cases_from_known_contact <- cases %>%
-  filter(was_contact) %>%
-  count()
-cases_from_known_contact_last7d <- cases %>%
-  filter(date_of_reporting >= prev_7_date) %>%
-  filter(was_contact) %>%
-  count()
-perc_from_known_contact <-
-  round((cases_from_known_contact / total_cases_reg)*100, digits = 1)
-perc_from_known_contact_last7d <-
-  round((cases_from_known_contact_last7d / cases_reg_last7d)*100, digits = 1)
+
 valueBox(paste0(perc_from_known_contact,"%"), 
          caption = "Cases from known contacts",
          color =  custom_grey0)
 ```
 
-<!-- ### Cases with contacts listed/contacted within 48hrs -->
-<!-- ```{r cases_contacts_listed_48hr, echo = FALSE} -->
+### Cases with contacts listed/contacted within 48hrs
+```{r cases_contacts_listed_48hr, echo = FALSE}
 
-<!-- valueBox(paste0(perc_from_known_contact,"%"),  -->
-<!--          caption = "Cases with contacts listed within 48hrs", -->
-<!--          color =  custom_grey0) -->
+valueBox(paste0("5%"),
+         caption = "Cases with contacts listed within 48hrs",
+         color =  custom_grey0)
 
-<!-- ``` -->
+```
 
 
-### Cases Died / Recovered
+### Cases Died 
 ```{r cases_died, echo = FALSE}
-cases_died <- cases %>%
-  filter(outcome == "DECEASED") %>%
-  count()
-cases_recovered <- cases %>%
-  filter(outcome == "RECOVERED") %>%
-  count()
-valueBox(paste0(cases_died," / ",cases_recovered),
-         caption = "Cases died / recovered",
+
+valueBox(cases_died,
+         caption = "Cases died",
+         color = custom_grey0)
+```
+
+
+
+### Cases Recovered 
+```{r cases_recovered, echo = FALSE}
+
+valueBox(cases_recovered,
+         caption = "Cases recovered",
          color = custom_grey0)
 ```
 
 
 ### Active Contacts
-
 ```{r total_active_contacts_reg, echo = FALSE}
-total_contacts_reg <- contacts %>%
-  count() 
-contacts_active <- contacts %>%
-  filter(follow_up_status == "UNDER_FOLLOW_UP") %>%
-  count() 
+
 valueBox(contacts_active, 
          icon = "fa-users",
          color = godata_orange)
@@ -390,43 +459,27 @@ valueBox(contacts_active,
 
 ### New Contacts Listed, last 7d
 ```{r contacts_reg_last7d, echo = FALSE}
-contacts_reg_last7d <- contacts %>%
-  filter(date_of_reporting >= prev_7_date) %>%
-  count()
-contacts_reg_prev_last7d <- contacts %>%
-  filter(date_of_reporting >= before_prev_7_date & date_of_reporting < prev_7_date) %>%
-  count()
-perc_change_7d_contacts <- round(((contacts_reg_last7d - contacts_reg_prev_last7d) / contacts_reg_prev_last7d)*100, digits = 0) 
-perc_change_7d_contacts <- sprintf("%+3.0f %%", perc_change_7d_contacts)
+
 valueBox(contacts_reg_last7d, 
          caption = "New Contacts Listed, Last 7d",
          color = custom_grey0)
 ```
 
 ### Contacts Followed
-
 ```{r contacts_active_followed, echo = FALSE}
-contacts_active_followed <- contact_linelist_status %>%
-  filter(follow_up_status == "UNDER_FOLLOW_UP") %>%
-  filter(seen_with_signs | seen_without_signs) %>%
-  count()
-perc_contacts_active_followed <-
-  round((contacts_active_followed/contacts_active)*100,digits = 1)
-valueBox(paste0(perc_contacts_active_followed,"%"), 
-                  color = custom_grey0)
+
+valueBox(paste0(perc_contacts_active_followed,"%"),
+         caption = "Active Contacts Followed",
+          color = custom_grey0)
 ```
 
 ### Contacts Lost To Follow Up
 
 ```{r contacts_active_ltfu, echo = FALSE}
-contacts_active_ltfu <- contact_linelist_status %>%
-  filter(follow_up_status == "UNDER_FOLLOW_UP") %>%
-  filter(lost_to_followup) %>%
-  count()
-perc_contacts_active_ltfu <-
-  round((contacts_active_ltfu/contacts_active)*100,digits = 1)
-valueBox(paste0(perc_contacts_active_ltfu,"%"), 
-                  color = custom_grey0)
+
+valueBox(paste0(perc_contacts_active_ltfu,"%"),
+         caption = "Active Contacts LTFU",
+          color = custom_grey0)
 ```
 
 
@@ -496,6 +549,51 @@ case_age_breakdown_over_time_plot <-
     plot.caption = element_text(size = 8, face = "italic"),
     panel.grid.major.y = element_line(size = 0.2, colour = "grey"),
     panel.grid = element_blank())
+
+############################################################
+## epi curve date of onset
+############################################################
+
+# create the incidence object, aggregating cases by day
+  epi_date_of_onset <- incidence(       # create incidence object
+    x = cases,             # dataset
+    date_index = date_of_onset,  # date column
+    groups = classification,
+    interval = "day"          # date grouping interval
+  )
+  
+  epicurve_date_of_onset <-
+    plot(epi_date_of_onset,
+         fill = classification,                       # box/bar color,
+         legend = "top",                       # legend on top
+         title = "Epidemic curve by Date of Onset",  # title
+         xlab = "Day of onset",               # x-axis label
+         show_cases = FALSE,                    # show each case as an individual box
+         alpha = 0.7,                          # transparency 
+         n.breaks = 20,
+         border = "grey",                      # box border
+         angle = 45,                           # angle of date labels
+         centre_dates = FALSE,                 # date labels at edge of bar
+         date_format = "%d %b %Y") + # adjust how dates are displayed 
+    scale_y_continuous(expand = c(0,0)) +      # y-axis
+    
+    labs(                               
+      subtitle = stringr::str_glue(                            
+        "n = {total_case_count} 
+        {missing_onset} cases are missing date of onset and not shown",
+        total_case_count = nrow(cases),
+        missing_onset = nrow(cases %>% filter(is.na(date_of_onset))))) +
+    theme(
+      legend.title = element_text(size=10, face = "bold"),
+      plot.title = element_text(size=12, face = "bold"),
+      #axis.ticks.x = element_blank(),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.subtitle = element_text(size=11),
+      plot.caption = element_text(size = 8, face = "italic"),
+      panel.grid = element_blank(),
+      axis.ticks.y.left = element_line(size = 0.5, colour = "grey"),
+      panel.grid.major.y = element_line(size = 0.2, colour = "grey"))
+
 #############################################################
 ### age sex pryamid
 ############################################################
@@ -676,7 +774,8 @@ plot_cases_high_risk <-
     guide = guide_legend(reverse = TRUE))  
   
 #########################################
-case_age_breakdown_over_time_plot
+# case_age_breakdown_over_time_plot
+epicurve_date_of_onset
 age_pyramid_case
 case_occupation_pie_chart
 plot_cases_high_risk
@@ -744,6 +843,45 @@ contact_age_breakdown_over_time_plot <-
     plot.caption = element_text(size = 8, face = "italic"),
     panel.grid.major.y = element_line(size = 0.2, colour = "grey"),
     panel.grid = element_blank())
+
+###########################################################
+## contacts reg over time
+##########################################################
+# create the incidence object
+  contacts_by_reg <- incidence(       # create incidence object
+    x = contacts,             # dataset
+    date_index = date_of_reporting,  # date column
+    interval = "day"          # date grouping interval
+  )
+  
+  plot_contacts_by_reg <-
+    plot(contacts_by_reg,                       # box/bar color,
+         legend = "top",                       # legend on top
+         title = "Contacts Listed by Date of Reporting",  # title
+         xlab = "Day of reporting",               # x-axis label                   
+         alpha = 0.7,                          # transparency 
+         n.breaks = 20,
+         border = "grey",                      # box border
+         angle = 45,                           # angle of date labels
+         centre_dates = FALSE,                 # date labels at edge of bar
+         date_format = "%d %b %Y") + # adjust how dates are displayed 
+    scale_y_continuous(expand = c(0,0)) +      # y-axis
+    
+    labs(                               
+      subtitle = stringr::str_glue(                            
+        "n = {total_contact_count}",
+        total_contact_count = nrow(contacts))) +
+    theme(
+      legend.title = element_text(size=10, face = "bold"),
+      plot.title = element_text(size=12, face = "bold"),
+      #axis.ticks.x = element_blank(),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.subtitle = element_text(size=11),
+      plot.caption = element_text(size = 8, face = "italic"),
+      panel.grid = element_blank(),
+      axis.ticks.y.left = element_line(size = 0.5, colour = "grey"),
+      panel.grid.major.y = element_line(size = 0.2, colour = "grey"))
+  
 #############################################################
 ### age sex pryamid
 ############################################################
@@ -923,7 +1061,8 @@ plot_contacts_high_risk <-
     guide = guide_legend(reverse = TRUE))
   
 #########################################
-contact_age_breakdown_over_time_plot
+# contact_age_breakdown_over_time_plot
+plot_contacts_by_reg
 age_pyramid_contact
 contact_occupation_pie_chart
 plot_contacts_high_risk
@@ -939,8 +1078,7 @@ Row {data-height=200}
 
 ### New Cases From Contact List
 ```{r perc_from_known_contact_last7d, echo = FALSE}
-perc_from_known_contact_last7d <-
-  round((cases_from_known_contact_last7d / cases_reg_last7d)*100, digits = 1)
+
 valueBox(paste0(perc_from_known_contact_last7d,"%"), 
          caption = "New Cases among known contacts, last 7d",
          color =  custom_grey0)
@@ -948,13 +1086,10 @@ valueBox(paste0(perc_from_known_contact_last7d,"%"),
 
 ### New Cases Unlinked to Source of Infection
 ```{r perc_cases_without_epilink_last7d, echo = FALSE}
-cases_without_epilink_last7d <- case_linelist_essential %>%
-  filter(!is.na(source_case_id),
-         date_of_reporting >= prev_7_date) %>%
-  count()
-perc_cases_without_epilink_last7d <-
-  round((cases_without_epilink_last7d / cases_reg_last7d)*100, digits = 1)
-valueBox(paste0(perc_cases_without_epilink_last7d,"%"),  
+
+perc_cases_no_epi_link_last7d <-
+  round((cases_no_epi_link_last7d / cases_reg_last7d)*100, digits = 1)
+valueBox(paste0(perc_cases_no_epi_link_last7d,"%"),  
          caption = "New cases with no epi-link, last 7d",
          color = custom_grey0)
 ```
@@ -1028,14 +1163,13 @@ Row {.tabset data-height=800}
 ### By Admin 1
 ```{r contact_kpi_table, fig.width=10, fig.height=7}
 tab_contact_status <- contact_linelist_status %>%
-  # filter(!is.na(admin_2_name)) %>%
   group_by(admin_1_name) %>%
   summarize(
     total_reg_contacts = n(),
     contact_reg_last7d = sum(date_of_reporting >= prev_7_date),
     contact_reg_prev_last7d = sum(date_of_reporting >= before_prev_7_date & date_of_reporting < prev_7_date), # add perc:change
-    total_contacts_became_case = sum(contact_status == "BECAME_CASE"), # % Became case
-    total_active_contacts = sum(contact_status == "UNDER_FOLLOW_UP"),
+    total_contacts_became_case = sum(follow_up_status == "BECAME_CASE"), # % Became case
+    total_active_contacts = sum(follow_up_status == "UNDER_FOLLOW_UP"),
     seen = sum(seen_with_signs + seen_without_signs), # add perc_seen
     # seen_with_signs = sum(seen_with_signs), 
     # seen_without_signs = sum(seen_without_signs),
@@ -1096,8 +1230,8 @@ tab_contact_status_2 <- contact_linelist_status %>%
     total_reg_contacts = n(),
     contact_reg_last7d = sum(date_of_reporting >= prev_7_date),
     contact_reg_prev_last7d = sum(date_of_reporting >= before_prev_7_date & date_of_reporting < prev_7_date), # add perc:change
-    total_contacts_became_case = sum(contact_status == "BECAME_CASE"), # % Became case
-    total_active_contacts = sum(contact_status == "UNDER_FOLLOW_UP"),
+    total_contacts_became_case = sum(follow_up_status == "BECAME_CASE"), # % Became case
+    total_active_contacts = sum(follow_up_status == "UNDER_FOLLOW_UP"),
     seen = sum(seen_with_signs + seen_without_signs), # add perc_seen
     # seen_with_signs = sum(seen_with_signs), 
     # seen_without_signs = sum(seen_without_signs),
@@ -1148,17 +1282,18 @@ formattable_tab_contact_status_2 <-tab_contact_status_2 %>%
 formattable_tab_contact_status_2
 ```
 
-### By Admin 3
+### By Contact Tracer
+
 ```{r contact_kpi_table_3, fig.width=10, fig.height=7}
-tab_contact_status_3 <- contact_linelist_status %>%
-  # filter(!is.na(admin_2_name)) %>%
-  group_by(admin_3_name) %>%
+
+tab_contact_status_user <- contact_linelist_status %>%
+  group_by(user_name) %>%
   summarize(
     total_reg_contacts = n(),
     contact_reg_last7d = sum(date_of_reporting >= prev_7_date),
     contact_reg_prev_last7d = sum(date_of_reporting >= before_prev_7_date & date_of_reporting < prev_7_date), # add perc:change
-    total_contacts_became_case = sum(contact_status == "BECAME_CASE"), # % Became case
-    total_active_contacts = sum(contact_status == "UNDER_FOLLOW_UP"),
+    total_contacts_became_case = sum(follow_up_status == "BECAME_CASE"), # % Became case
+    total_active_contacts = sum(follow_up_status == "UNDER_FOLLOW_UP"),
     seen = sum(seen_with_signs + seen_without_signs), # add perc_seen
     # seen_with_signs = sum(seen_with_signs), 
     # seen_without_signs = sum(seen_without_signs),
@@ -1175,9 +1310,9 @@ tab_contact_status_3 <- contact_linelist_status %>%
          perc_seen = round(seen*100 / total_active_contacts,digits=1),
          perc_not_yet_seen = round(never_seen*100 / total_active_contacts,digits=1),
          perc_lost_to_followup = round(lost_to_followup*100 / total_active_contacts,digits=1)) %>%
-  arrange(admin_3_name) %>%
+  arrange(user_name) %>%
   select(
-    `Admin 3` = admin_3_name,
+    `Contact Tracer` = user_name,
     `Total Registered contacts` = total_reg_contacts,
     `% Became case` = perc_became_case,
     `New Contacts, Last 7d` = contact_reg_last7d,
@@ -1188,12 +1323,13 @@ tab_contact_status_3 <- contact_linelist_status %>%
     `% Not yet followed` = perc_not_yet_seen,
     `% Lost to follow up` = perc_lost_to_followup
   ) 
-formattable_tab_contact_status_3 <-tab_contact_status_3 %>%
+
+formattable_tab_contact_status_user <-tab_contact_status_user %>%
   
   mutate(
-    `Admin 3` = formatter("span", style = ~ formattable::style(
-      color = ifelse(`Admin 3` == "Non rapporté", "red", "grey"),
-      font.weight = "bold",font.style = "italic"))(`Admin 3`),
+    `Contact Tracer` = formatter("span", style = ~ formattable::style(
+      color = ifelse(`Contact Tracer` == "Non rapporté", "red", "grey"),
+      font.weight = "bold",font.style = "italic"))(`Contact Tracer`),
     `New Contacts, Last 7d` = color_bar(custom_grey0)(`New Contacts, Last 7d`),
     `% Became case`= color_tile("white", "grey")(`% Became case`),
     `% Lost to follow up`= color_tile("white", "grey")(`% Lost to follow up`),
@@ -1206,11 +1342,73 @@ formattable_tab_contact_status_3 <-tab_contact_status_3 %>%
   add_header_above(c(" " = 2, 
                      "Contact registration" = 4,
                      "Contact follow-up" = 4))
-formattable_tab_contact_status_3
+formattable_tab_contact_status_user
 ```
 
-### By Contact Tracer
+### By Team
 
+```{r contact_kpi_table_team, fig.width=10, fig.height=7}
+
+tab_contact_status_team <- contact_linelist_status %>%
+  group_by(team_name) %>%
+  summarize(
+    total_reg_contacts = n(),
+    contact_reg_last7d = sum(date_of_reporting >= prev_7_date),
+    contact_reg_prev_last7d = sum(date_of_reporting >= before_prev_7_date & date_of_reporting < prev_7_date), # add perc:change
+    total_contacts_became_case = sum(follow_up_status == "BECAME_CASE"), # % Became case
+    total_active_contacts = sum(follow_up_status == "UNDER_FOLLOW_UP"),
+    seen = sum(seen_with_signs + seen_without_signs), # add perc_seen
+    # seen_with_signs = sum(seen_with_signs), 
+    # seen_without_signs = sum(seen_without_signs),
+    # missed = sum(missed),
+    # no_action = sum(no_action),
+    # second_week = sum(second_week_followup),
+    # first_week = sum(first_week_followup),
+    lost_to_followup = sum(lost_to_followup), # add perc_seen
+    never_seen = sum(never_seen) # add perc_never_seen
+            ) %>%
+  mutate(
+         perc_change_7d_contacts = round((contact_reg_last7d - contact_reg_prev_last7d)/contact_reg_prev_last7d*100,digits=1),
+         perc_became_case = round(total_contacts_became_case*100 / total_reg_contacts,digits=1),
+         perc_seen = round(seen*100 / total_active_contacts,digits=1),
+         perc_not_yet_seen = round(never_seen*100 / total_active_contacts,digits=1),
+         perc_lost_to_followup = round(lost_to_followup*100 / total_active_contacts,digits=1)) %>%
+  arrange(team_name) %>%
+  select(
+    `Team` = team_name,
+    `Total Registered contacts` = total_reg_contacts,
+    `% Became case` = perc_became_case,
+    `New Contacts, Last 7d` = contact_reg_last7d,
+    `% Weekly Change` = perc_change_7d_contacts,
+    `Active contacts` = total_active_contacts,
+    `% Followed` = perc_seen,
+    `% Followed within 48hrs` = perc_seen,
+    `% Not yet followed` = perc_not_yet_seen,
+    `% Lost to follow up` = perc_lost_to_followup
+  ) 
+
+formattable_tab_contact_status_team <-tab_contact_status_team %>%
+  
+  mutate(
+    `Team` = formatter("span", style = ~ formattable::style(
+      color = ifelse(`Team` == "Non rapporté", "red", "grey"),
+      font.weight = "bold",font.style = "italic"))(`Team`),
+    `New Contacts, Last 7d` = color_bar(custom_grey0)(`New Contacts, Last 7d`),
+    `% Became case`= color_tile("white", "grey")(`% Became case`),
+    `% Lost to follow up`= color_tile("white", "grey")(`% Lost to follow up`),
+    `% Followed`= color_tile("white", "grey")(`% Followed`), 
+    `% Not yet followed`= color_tile("white", custom_red)(`% Not yet followed`)
+       ) %>%
+  # select(`Superviseur`, everything()) %>%
+  kable("html", escape = F, align =c("l","c","c","c","c","c","c","c","c","c")) %>%
+  kable_styling("hover", full_width = FALSE) %>%
+  add_header_above(c(" " = 2, 
+                     "Contact registration" = 4,
+                     "Contact follow-up" = 4))
+
+formattable_tab_contact_status_team
+
+```
 
 DATA QUALITY {data-icon="fa-clipboard"} 
 =====================================================
@@ -1225,28 +1423,28 @@ DATA QUALITY {data-icon="fa-clipboard"}
 completion_table_cases <- cases %>%
   
   transmute(
-    case_id = case_when(is.na(case_id) ~ FALSE, TRUE ~ TRUE),
+    case_id = case_when(is.na(visual_id) ~ FALSE, TRUE ~ TRUE),
     classification = case_when(is.na(classification) ~ FALSE, TRUE ~ TRUE),
     gender = case_when(is.na(gender) ~ FALSE, TRUE ~ TRUE),
     age = case_when(is.na(age) ~ FALSE, TRUE ~ TRUE),
     occupation = case_when(is.na(occupation) ~ FALSE, TRUE ~ TRUE),
     pregnancy_status = case_when(is.na(pregnancy_status) ~ FALSE, TRUE ~ TRUE),
-    outcome = case_when(is.na(outcome_id) ~ FALSE, TRUE ~ TRUE),
+    outcome = case_when(is.na(outcome) ~ FALSE, TRUE ~ TRUE),
     date_of_infection = case_when(is.na(date_of_infection) ~ FALSE, TRUE ~ TRUE),
     date_become_case = case_when(is.na(date_become_case) ~ FALSE, TRUE ~ TRUE),
     date_of_onset = case_when(is.na(date_of_onset) ~ FALSE, TRUE ~ TRUE),
     date_of_outcome = case_when(is.na(date_of_outcome) ~ FALSE, TRUE ~ TRUE),
     admin_1 = case_when(is.na(admin_1_name) ~ FALSE, TRUE ~ TRUE),
     admin_2 = case_when(is.na(admin_2_name) ~ FALSE, TRUE ~ TRUE),
-    admin_3 = case_when(is.na(admin_3_name) ~ FALSE, TRUE ~ TRUE),
+    # admin_3 = case_when(is.na(admin_3_name) ~ FALSE, TRUE ~ TRUE),
     address = case_when(is.na(address) ~ FALSE, TRUE ~ TRUE),
     city = case_when(is.na(city) ~ FALSE, TRUE ~ TRUE),
     postal_code = case_when(is.na(postal_code) ~ FALSE, TRUE ~ TRUE),
     telephone = case_when(is.na(telephone) ~ FALSE, TRUE ~ TRUE),
-    isolation = case_when(is.na(isolation_typeid) ~ FALSE, TRUE ~ TRUE),
-    hospitalization = case_when(is.na(hospitalization_typeid) ~ FALSE, TRUE ~ TRUE),
-    risk_level = case_when(is.na(risk_level) ~ FALSE, TRUE ~ TRUE),
-    source_visualid = case_when(is.na(source_visualid) ~ FALSE, TRUE ~ TRUE)
+    vaccinated = case_when(is.na(vaccinated) ~ FALSE, TRUE ~ TRUE),
+    isolation = case_when(is.na(isolated) ~ FALSE, TRUE ~ TRUE),
+    hospitalization = case_when(is.na(hospitalized) ~ FALSE, TRUE ~ TRUE),
+    risk_level = case_when(is.na(risk_level) ~ FALSE, TRUE ~ TRUE)
     )
     
 completion_table_cases_pivot <- completion_table_cases %>%
@@ -1272,27 +1470,38 @@ plot_completion_table_cases <-
         plot.caption = element_text(size = 8, face = "italic")) +
   scale_completion +
   theme_classic()
+
 ######################################################################
 # Contacts
-completion_table_contacts <- contact_linelist_essential %>%
+completion_table_contacts <- contacts %>%
   transmute(
-    contact_id = case_when(is.na(contact_id) ~ FALSE, TRUE ~ TRUE),
+    contact_id = case_when(is.na(visual_id) ~ FALSE, TRUE ~ TRUE),
     gender = case_when(is.na(gender) ~ FALSE, TRUE ~ TRUE),
     age = case_when(is.na(age) ~ FALSE, TRUE ~ TRUE),
     occupation = case_when(is.na(occupation) ~ FALSE, TRUE ~ TRUE),
-    contact_status = case_when(is.na(contact_status) ~ FALSE, TRUE ~ TRUE),
+    follow_up_status = case_when(is.na(follow_up_status) ~ FALSE, TRUE ~ TRUE),
     pregnancy_status = case_when(is.na(pregnancy_status) ~ FALSE, TRUE ~ TRUE),
     risk_level = case_when(is.na(risk_level) ~ FALSE, TRUE ~ TRUE),
     date_of_last_contact = case_when(is.na(date_of_last_contact) ~ FALSE, TRUE ~ TRUE),
     admin_1 = case_when(is.na(admin_1_name) ~ FALSE, TRUE ~ TRUE),
     admin_2 = case_when(is.na(admin_2_name) ~ FALSE, TRUE ~ TRUE),
-    admin_3 = case_when(is.na(admin_3_name) ~ FALSE, TRUE ~ TRUE),
+    # admin_3 = case_when(is.na(admin_3_name) ~ FALSE, TRUE ~ TRUE),
     address = case_when(is.na(address) ~ FALSE, TRUE ~ TRUE),
     city = case_when(is.na(city) ~ FALSE, TRUE ~ TRUE),
     telephone = case_when(is.na(telephone) ~ FALSE, TRUE ~ TRUE),
     email = case_when(is.na(email) ~ FALSE, TRUE ~ TRUE),
     postal_code = case_when(is.na(postal_code) ~ FALSE, TRUE ~ TRUE),
-    risk_level = case_when(is.na(risk_level) ~ FALSE, TRUE ~ TRUE))
+    risk_level = case_when(is.na(risk_level) ~ FALSE, TRUE ~ TRUE),
+    vaccinated = case_when(is.na(vaccinated) ~ FALSE, TRUE ~ TRUE),
+    
+    # exposure_type = case_when(is.na(exposure_type) ~ FALSE, TRUE ~ TRUE),
+    context_of_transmission = case_when(is.na(relationship_context_of_transmission) ~ FALSE, TRUE ~ TRUE),
+    exposure_type = case_when(is.na(relationship_exposure_type) ~ FALSE, TRUE ~ TRUE),
+    exposure_frequency = case_when(is.na(relationship_exposure_frequency) ~ FALSE, TRUE ~ TRUE),
+    exposure_duration = case_when(is.na(relationship_exposure_duration) ~ FALSE, TRUE ~ TRUE),
+    certainty_level = case_when(is.na(relationship_certainty_level) ~ FALSE, TRUE ~ TRUE),
+    cluster = case_when(is.na(relationship_cluster_id) ~ FALSE, TRUE ~ TRUE)
+    )
     
 completion_table_contacts_pivot <- completion_table_contacts %>%
   mtabulate() %>%
@@ -1311,49 +1520,32 @@ plot_completion_table_contacts <-
         plot.subtitle = element_text(size = 10)) +
   scale_completion +
   theme_minimal()   
-# Relationships
-completion_table_relationships <- relationships %>%
-  transmute(
-    source_visualid = case_when(is.na(source_visualid) ~ FALSE, TRUE ~ TRUE),
-    target_visualid = case_when(is.na(target_visualid) ~ FALSE, TRUE ~ TRUE),
-    exposure_type = case_when(is.na(exposure_type) ~ FALSE, TRUE ~ TRUE),
-    context_of_exposure = case_when(is.na(context_of_exposure) ~ FALSE, TRUE ~ TRUE),
-    exposure_frequency = case_when(is.na(exposure_frequency) ~ FALSE, TRUE ~ TRUE),
-    certainty_level = case_when(is.na(certainty_level) ~ FALSE, TRUE ~ TRUE),
-    exposure_duration = case_when(is.na(exposure_duration) ~ FALSE, TRUE ~ TRUE),
-    date_of_last_contact = case_when(is.na(date_of_last_contact) ~ FALSE, TRUE ~ TRUE),
-    relation_detail = case_when(is.na(relation_detail) ~ FALSE, TRUE ~ TRUE),
-    cluster = case_when(is.na(cluster) ~ FALSE, TRUE ~ TRUE))
-    
-completion_table_relationships_pivot <- completion_table_relationships %>%
-  mtabulate() %>%
-  tibble::rownames_to_column("variable") %>%
-  pivot_longer(-variable, names_to = "completed", values_to = "count") %>%
-  arrange(variable, desc(count))
-plot_completion_table_relationships <- 
-  ggplot(completion_table_relationships_pivot, aes(x = variable, y = count, fill = completed)) + 
-  geom_col() +
-  coord_flip() +
-  labs(x = " ",
-       y = "# of records",
-       title = "Overall Data completion rate across core COVID-19 Relationship variables",
-       subtitle = "Not including configurable questionnaire variables") +
-  theme(plot.title = element_blank(),
-        plot.subtitle = element_text(size = 10)) +
-  scale_completion +
-  theme_minimal()  
+
 ###########################################################################3333
-# avg data completion over time
-completion_rate_by_week <- case_linelist_essential %>%
-  filter(date_of_reporting <= prev_7_date) %>%
-  mutate(week_of_reporting = cut(date_of_reporting, breaks = "week")) %>%
-  mutate(week_of_reporting = as.Date(week_of_reporting)) %>%
-  group_by(week_of_reporting) %>%
-  summarize(mean_case_completion = round(mean(100-perc_na),digits=1)) %>%
-  ungroup() 
-# plot_completion_rate_by_reporting_week <-
-#   ggplot(completion_rate_by_week, aes(x = week_of_reporting,  y = mean_case_completion)) +
-#   geom_line(color="darkblue", size = 1.3) +
+# # avg data completion over time
+# completion_rate_by_week <- case_linelist_essential %>%
+#   filter(date_of_reporting <= prev_7_date) %>%
+#   mutate(week_of_reporting = cut(date_of_reporting, breaks = "week")) %>%
+#   mutate(week_of_reporting = as.Date(week_of_reporting)) %>%
+#   group_by(week_of_reporting) %>%
+#   summarize(mean_case_completion = round(mean(100-perc_na),digits=1)) %>%
+#   ungroup() 
+# 
+# completion_rates_by_week <- contact_linelist_essential %>%
+#   filter(date_of_reporting > "2020-01-01") %>%
+#   filter(date_of_reporting < prev_7_date) %>%
+#   mutate(week_of_reporting = cut(date_of_reporting, breaks = "2 weeks")) %>%
+#   mutate(week_of_reporting = as.Date(week_of_reporting)) %>%
+#   group_by(week_of_reporting) %>%
+#   summarize(mean_contact_completion = round(mean(100-perc_na),digits=1))  %>%
+#   ungroup() %>%
+#   inner_join(completion_rate_by_week, by = "week_of_reporting") %>%
+#   rename(contact_registration = mean_contact_completion,
+#          case_registration = mean_case_completion) %>%
+#   pivot_longer(-week_of_reporting, names_to = "type", values_to = "mean")
+# plot_completion_rates_by_week <-
+#   ggplot(completion_rates_by_week, aes(x = week_of_reporting,  y = mean, color = type )) +
+#   geom_line(size = 1.3) +
 #   scale_x_date(date_labels = "%b-%d",
 #                date_breaks = "2 weeks") +
 #   ylim(0,100) +
@@ -1362,7 +1554,7 @@ completion_rate_by_week <- case_linelist_essential %>%
 #        y = "Avg % Data Completion",
 #        x = "Week of Reporting",
 #        title = "Data Completion Over Time",
-#        subtitle = "Avg across core case variables") +
+#        subtitle = "Avg across core case contact variables") +
 #     theme(
 #         legend.position = "right",
 #         legend.title = element_text(size=10, face = "bold"),
@@ -1370,41 +1562,9 @@ completion_rate_by_week <- case_linelist_essential %>%
 #         plot.subtitle = element_text(size=11),
 #         plot.caption = element_text(size = 8, face = "italic"),
 #         axis.text.x = element_text(angle = 45, hjust = 1)) 
-completion_rates_by_week <- contact_linelist_essential %>%
-  filter(date_of_reporting > "2020-01-01") %>%
-  filter(date_of_reporting < prev_7_date) %>%
-  mutate(week_of_reporting = cut(date_of_reporting, breaks = "2 weeks")) %>%
-  mutate(week_of_reporting = as.Date(week_of_reporting)) %>%
-  group_by(week_of_reporting) %>%
-  summarize(mean_contact_completion = round(mean(100-perc_na),digits=1))  %>%
-  ungroup() %>%
-  inner_join(completion_rate_by_week, by = "week_of_reporting") %>%
-  rename(contact_registration = mean_contact_completion,
-         case_registration = mean_case_completion) %>%
-  pivot_longer(-week_of_reporting, names_to = "type", values_to = "mean")
-plot_completion_rates_by_week <-
-  ggplot(completion_rates_by_week, aes(x = week_of_reporting,  y = mean, color = type )) +
-  geom_line(size = 1.3) +
-  scale_x_date(date_labels = "%b-%d",
-               date_breaks = "2 weeks") +
-  ylim(0,100) +
-  theme_classic() +
-    labs(x = "",
-       y = "Avg % Data Completion",
-       x = "Week of Reporting",
-       title = "Data Completion Over Time",
-       subtitle = "Avg across core case contact variables") +
-    theme(
-        legend.position = "right",
-        legend.title = element_text(size=10, face = "bold"),
-        plot.title = element_text(size=12, face = "bold"),
-        plot.subtitle = element_text(size=11),
-        plot.caption = element_text(size = 8, face = "italic"),
-        axis.text.x = element_text(angle = 45, hjust = 1)) 
 plot_completion_table_cases
 plot_completion_table_contacts
-plot_completion_table_relationships
-plot_completion_rates_by_week
+# plot_completion_rates_by_week
 ```
 
 MAPS {data-icon="fa-map-marker"}
