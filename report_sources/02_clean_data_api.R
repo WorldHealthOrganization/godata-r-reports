@@ -1,11 +1,10 @@
-####################################################################################################################################################
-## Go.Data Cleaning Scripts of collections retrieved directly from API
-# 
-#       Before running this Script, please first run 01_data_import_api.R
-#
-#       This script is for cleaning the Go.Data data for core variables ONLY (i.e. does not retrieve from custom questionnaire as this varies across instances)
-#       You can adapt these relatively easily if you need to add in variables from your questionnaire.
-#       Script authored and maintained by Go.Data team (godata@who.int)
+# Clean Data Collections from Go.Data API
+# author:godata@who.int
+
+# Before running this Script, please first run 01_data_import_api.R
+
+# Handles core variables ONLY 
+# You can adapt these relatively easily if you need to add in variables from your questionnaire.
 
 
 # Main cleaning functions include:
@@ -16,13 +15,14 @@
 # 4. standardize column name syntax
 # 5. simplify categorical var syntax
 # 6. get dates in right format
-# 7. add useful new vars (age category)
+# 7. add useful new vars (i.e., age category)
 
 ####################################################################################################################################################
 
 # load packages
 # Ensures the package "pacman" is installed
 if (!require("pacman")) install.packages("pacman")
+
 # Packages available from CRAN
 ##############################
 pacman::p_load(
@@ -216,42 +216,29 @@ cases_clean <- cases %>%
   mutate(age_months = as.numeric(age_months)) %>%
   mutate(age_months = na_if(age_months,0)) %>%
   
-  # standardize age vars into just one var
-  mutate(age = case_when(!is.na(age_months) ~  age_months / 12,
+  # standardize age vars into just one var, round by 1 decimal
+  mutate(age = case_when(!is.na(age_months) ~  round(age_months / 12, digits = 1),
                          TRUE ~ age_years)) %>%
   
-  # WHO recommended age categories, updated Sept 2020
+  # WHO age categories updated Sept 2020: 
+  # 0-4,5-9,10-14,15-19,20-29,30-39,40-49,50-59,60-64,65-69,70-74,75-79, 80+
+  # these categories below match that of detailed WHO surveillance dash:
+  # <5, 5-14, 15-24, 25-64, 65+
   mutate(
     age_class = factor(
       case_when(
-        age <= 4 ~ "0-4",
-        age <= 9 ~ "5-9",
-        age <= 14 ~ "10-14",
-        age <= 19 ~ "15-19",
-        age <= 29 ~ "20-29",
-        age <= 39 ~ "30-39",
-        age <= 49 ~ "40-49",
-        age <= 59 ~ "50-59",
-        age <= 64 ~ "60-64",
-        age <= 69 ~ "65-69",
-        age <= 74 ~ "70-74",
-        age <= 79 ~ "75-79",
-        is.finite(age) ~ "80+",
+        age <= 4 ~ "<5",
+        age <= 14 ~ "5-14",
+        age <= 24 ~ "15-24",
+        age <= 64 ~ "25-64",
+        is.finite(age) ~ "65+",
         TRUE ~ "unknown"
       ), levels = c(
-        "0-4",
-        "5-9",
-        "10-14",
-        "15-19",
-        "20-29",
-        "30-39",
-        "40-49",
-        "50-59",
-        "60-64",
-        "65-69",
-        "70-74",
-        "75-79",
-        "80+",
+        "<5",
+        "5-14",
+        "15-24",
+        "25-64",
+        "65+",
         "unknown"
       )),
     age_class = factor(
@@ -415,42 +402,29 @@ contacts_clean <- contacts %>%
   mutate(age_months = as.numeric(age_months)) %>%
   mutate(age_months = na_if(age_months,0)) %>%
   
-  # standardize age vars into just one var
-  mutate(age = case_when(!is.na(age_months) ~  age_months / 12,
+  # standardize age vars into just one var, round by 1 decimal
+  mutate(age = case_when(!is.na(age_months) ~  round(age_months / 12, digits = 1),
                          TRUE ~ age_years)) %>%
   
-  # WHO recommended age categories, updated Sept 2020
+  # WHO age categories updated Sept 2020: 
+  # 0-4,5-9,10-14,15-19,20-29,30-39,40-49,50-59,60-64,65-69,70-74,75-79, 80+
+  # these categories below match that of detailed WHO surveillance dash:
+  # <5, 5-14, 15-24, 25-64, 65+
   mutate(
     age_class = factor(
       case_when(
-        age <= 4 ~ "0-4",
-        age <= 9 ~ "5-9",
-        age <= 14 ~ "10-14",
-        age <= 19 ~ "15-19",
-        age <= 29 ~ "20-29",
-        age <= 39 ~ "30-39",
-        age <= 49 ~ "40-49",
-        age <= 59 ~ "50-59",
-        age <= 64 ~ "60-64",
-        age <= 69 ~ "65-69",
-        age <= 74 ~ "70-74",
-        age <= 79 ~ "75-79",
-        is.finite(age) ~ "80+",
+        age <= 4 ~ "<5",
+        age <= 14 ~ "5-14",
+        age <= 24 ~ "15-24",
+        age <= 64 ~ "25-64",
+        is.finite(age) ~ "65+",
         TRUE ~ "unknown"
       ), levels = c(
-        "0-4",
-        "5-9",
-        "10-14",
-        "15-19",
-        "20-29",
-        "30-39",
-        "40-49",
-        "50-59",
-        "60-64",
-        "65-69",
-        "70-74",
-        "75-79",
-        "80+",
+        "<5",
+        "5-14",
+        "15-24",
+        "25-64",
+        "65+",
         "unknown"
       )),
     age_class = factor(
@@ -462,7 +436,7 @@ contacts_clean <- contacts %>%
   select(
     id, visual_id, classification, follow_up_status, # identifier 
     first_name, middle_name, last_name, gender, age, age_class, occupation, pregnancy_status, # demographics
-    date_of_reporting, date_of_last_contact, date_of_burial, # dates
+    date_of_reporting, date_of_last_contact, date_of_burial, date_of_follow_up_start, date_of_follow_up_end, # dates
     was_case, risk_level, risk_reason, safe_burial, transfer_refused, # epi
     responsible_user_id, follow_up_team_id, # assigned contact tracer
     matches("^admin_.*name$"), lat, long, address, postal_code, city, telephone, email, # address
@@ -575,42 +549,29 @@ contacts_of_contacts_clean <- contacts_of_contacts %>%
   mutate(age_months = as.numeric(age_months)) %>%
   mutate(age_months = na_if(age_months,0)) %>%
   
-  # standardize age vars into just one var
-  mutate(age = case_when(!is.na(age_months) ~  age_months / 12,
+  # standardize age vars into just one var, round by 1 decimal
+  mutate(age = case_when(!is.na(age_months) ~  round(age_months / 12, digits = 1),
                          TRUE ~ age_years)) %>%
   
-  # WHO recommended age categories, updated Sept 2020
+  # WHO age categories updated Sept 2020: 
+  # 0-4,5-9,10-14,15-19,20-29,30-39,40-49,50-59,60-64,65-69,70-74,75-79, 80+
+  # these categories below match that of detailed WHO surveillance dash:
+  # <5, 5-14, 15-24, 25-64, 65+
   mutate(
     age_class = factor(
       case_when(
-        age <= 4 ~ "0-4",
-        age <= 9 ~ "5-9",
-        age <= 14 ~ "10-14",
-        age <= 19 ~ "15-19",
-        age <= 29 ~ "20-29",
-        age <= 39 ~ "30-39",
-        age <= 49 ~ "40-49",
-        age <= 59 ~ "50-59",
-        age <= 64 ~ "60-64",
-        age <= 69 ~ "65-69",
-        age <= 74 ~ "70-74",
-        age <= 79 ~ "75-79",
-        is.finite(age) ~ "80+",
+        age <= 4 ~ "<5",
+        age <= 14 ~ "5-14",
+        age <= 24 ~ "15-24",
+        age <= 64 ~ "25-64",
+        is.finite(age) ~ "65+",
         TRUE ~ "unknown"
       ), levels = c(
-        "0-4",
-        "5-9",
-        "10-14",
-        "15-19",
-        "20-29",
-        "30-39",
-        "40-49",
-        "50-59",
-        "60-64",
-        "65-69",
-        "70-74",
-        "75-79",
-        "80+",
+        "<5",
+        "5-14",
+        "15-24",
+        "25-64",
+        "65+",
         "unknown"
       )),
     age_class = factor(
