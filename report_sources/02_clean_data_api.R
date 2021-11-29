@@ -1,5 +1,5 @@
 # Clean Data Collections from Go.Data API
-# author:godata@who.int
+# author and maintainer: Sara Hollis <holliss@who.int>
 
 # Before running this Script, please first run 01_data_import_api.R
 
