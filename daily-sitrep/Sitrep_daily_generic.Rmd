@@ -1,0 +1,565 @@
+---
+title: "xxxxx Disease Outbreak"
+subtitle: "Daily situation report"
+author: " "
+date: 'Produced on `r format(Sys.Date(), "%Y-%m-%d")`'
+output:
+  html_document:
+    self-contained: TRUE
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    toc_depth: 3
+    number_sections: true
+    theme: lumen
+params:
+  data_date:
+    label: "Date of data:"
+    value: "2022-12-05"
+    input: date
+---
+
+
+```{r include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  echo = FALSE,  # hide all code chunks in output
+  warning = FALSE, # do not show warnings in the output word doc 
+  message = FALSE, # do not show  messages in the output word doc
+  fig.align = "center", # align all figs in center
+  fig.width=8,     # Figure width
+  fig.height=4.5,  # Figure height
+  fig.topcaption = TRUE  # show figure titles on top of plot
+)
+```
+
+
+```{css zoom-lib-src}
+script src = "https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"
+```
+
+```{js zoom-jquery}
+ $(document).ready(function() {
+    $('body').prepend('<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>');
+    // onClick function for all plots (img's)
+    $('img.zoom').click(function() {
+      $('.zoomImg').attr('src', $(this).attr('src')).css({width: '1200px'});
+      $('.zoomDiv').css({opacity: '1', width: 'auto', border: '1px solid white', borderRadius: '5px', position: 'fixed', top: '50%', left: '50%', marginRight: '-50%', transform: 'translate(-50%, -50%)', boxShadow: '0px 0px 50px #888888', zIndex: '50', overflow: 'auto', maxHeight: '100%'});
+    });
+    // onClick function for zoomImg
+    $('img.zoomImg').click(function() {
+      $('.zoomDiv').css({opacity: '0', width: '0%'}); 
+    });
+  });
+```
+
+
+```{css}
+.header-section-number::after {
+content: ".";
+}
+h2 {
+font-size: 23px !important;
+}
+h3 {
+font-size: 18px !important;
+}
+body {
+font-size: 16px !important;
+}
+.zoomDiv {
+  opacity: 0;
+  position:absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 50;
+  transform: translate(-50%, -50%);
+  box-shadow: 0px 0px 50px #888888;
+  max-height:100%; 
+  overflow: scroll;
+}
+.zoomImg {
+  width: 1200px;
+}
+```
+
+
+```{r}
+
+# install or load packages
+pacman::p_load(rio, 
+               here, 
+               tidyverse, 
+               magrittr, 
+               janitor, 
+               lubridate, 
+               skimr, 
+               scales, 
+               TTR, 
+               flextable,
+               tidyquant,
+               kableExtra,
+               formattable,
+               gghighlight,
+               naniar,
+               gt,
+               lubridate)
+
+
+
+# Set time periods of interest
+# database data based on param in YAML
+#database_date <- ymd("2022-11-27")
+database_date <- ymd(params$data_date)
+database_week <- isoweek(database_date)
+
+# Rolling prev x days
+prev_1_date <- database_date - 1
+prev_7_date <- database_date - 7
+prev_14_date <- database_date - 14
+prev_21_date <- database_date - 21
+
+
+# last full week for weekly perc. changes etc.
+this_week <- case_when(
+  wday(database_date, week_start = 1) >= 5 ~ floor_date(database_date, "week", week_start = 1),
+  TRUE ~ floor_date(database_date, "week", week_start = 1) - weeks(1)
+)
+week_ago <- (this_week - weeks(1))
+four_weeks_ago <- (this_week - weeks(4))
+
+# import linelist, needs to be updated to connect to godataR outputs.
+
+linelist <- import(here("data","raw","linelist","filename.xlsx"))
+
+# clean linelist and output into /data/clean folder for subsequent analyses
+# needs to be updated to connect to clean godataR outputs.
+
+source(here("scripts","clean_linelist.R"))
+
+```
+
+```{r}
+# set themes
+source(here("scripts","themes.R"))
+```
+
+
+```{r}
+# insert logo here if you have one
+
+# htmltools::img(src = knitr::image_uri(file.path(here::here("inst", "logo.PNG"))), 
+#                alt = 'logo', 
+#                style = 'position:absolute; top:0; right:0; padding:10px; width:25%')
+```
+
+***Daily update : All data as of `r database_date`***
+
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+
+The report contains examples of automated epi analyses for use in various\n
+presentations or sitreps. Presently, the data sources include x, x and x.\n
+
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+
+<!-- overview section -->
+
+```{r, results = 'asis'}
+  # knit the document and save the character output to an object
+  res <- knitr::knit_child(
+    "scripts/key_figures.Rmd",
+    quiet = TRUE
+  )
+  
+  # Cat the object to make it render in your main document
+  cat(res, sep = '\n')
+```
+
+
+# __Epidemiological Overview__
+
+```{r}
+
+source(here("scripts","epicurve.R"))
+plot_epicurve_ma
+
+```
+
+
+```{r}
+
+source(here("scripts","table_overall.R"))  
+print_summary_table
+
+```
+
+## Epidemic curves{.tabset}
+
+### By week of onset
+```{r epicurve_ma_week, include=TRUE, fig.align="center"}
+
+source(here("scripts","epicurve.R"))
+plot_epicurve_week
+
+```
+
+### By week of reporting
+```{r epicurve_ma_week_dor, include=TRUE, fig.align="center"}
+
+source(here("scripts","epicurve.R"))
+plot_epicurve_week_dor
+
+```
+
+### By Classification - Sitrep ready
+```{r epicurve_by_status_sitrep, include=TRUE, fig.align="center"}
+
+source(here("scripts","epicurve.R"))  
+epicurve_by_class_sitrep
+
+```
+
+### By sex
+```{r}
+
+source(here("scripts","epicurve.R"))  
+epicurve_by_sex
+  
+```
+
+### By Status
+```{r}
+
+source(here("scripts","epicurve.R"))  
+epicurve_by_status
+
+```
+
+### By Classification (Daily), Faceted by District
+```{r}
+
+source(here("scripts","epicurve.R")) 
+epicurve_by_class_district   
+
+```
+
+
+### By Classification (Weekly), Faceted by District
+```{r}
+
+source(here("scripts","epicurve.R")) 
+epicurve_by_class_district_week
+
+```
+
+### By Status (Daily), Faceted by District
+```{r}
+
+source(here("scripts","epicurve.R")) 
+epicurve_by_status_district   
+
+```
+
+
+### By District (All){.tabset}
+```{r}
+
+source(here("scripts","epicurve.R")) 
+epicurve_district_all
+
+```
+
+#### Most affected districts
+```{r}
+
+source(here("scripts","epicurve.R"))
+epicurve_district_highlight
+
+```
+
+#### By district and moving average
+```{r}
+
+source(here("scripts","epicurve.R"))        
+plot_epicurve_ma_district
+
+```
+
+
+## Tables{.tabset .tabset-fade .tabset-pills}
+
+### District (last day & total) 
+```{r district_table_1d, include = TRUE}
+
+source(here("scripts","table_by_district.R"))
+table_district_1d
+
+```
+
+
+### District (last week & total) 
+```{r district_table_7d, include = TRUE}
+
+source(here("scripts","table_by_district.R"))
+table_district_7d
+
+```
+
+
+### District (last week & 21 days) 
+```{r district_table_7d_21d, include = TRUE}
+
+source(here("scripts","table_by_district.R"))
+table_district_7d_21d
+
+```
+
+### Subcounty (last day & total) 
+```{r subcounty_table_1d, include = TRUE}
+
+source(here("scripts","table_by_subcounty.R"))
+table_subcounty_1d
+
+```
+
+### Subcounty (last week & total) 
+```{r subcounty_table_7d, include = TRUE}
+
+source(here("scripts","table_by_subcounty.R"))
+table_subcounty_7d
+
+```
+
+
+### Subcounty (last week & 21 days) 
+```{r subcounty_table_7d_21d, include = TRUE}
+
+source(here("scripts","table_by_subcounty.R"))
+table_subcounty_7d_21d
+
+```
+
+
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+
+
+# __Case characteristics__
+
+## Age/sex breakdown{.tabset}
+```{r}
+
+source(here("scripts","age_sex_pyramids.R"))
+age_pyramid_case
+
+```
+
+## Occupational breakdown
+```{r}
+
+source(here("scripts","occupation.R"))
+#case_occupation_pie_chart
+cowplot::plot_grid(case_occupation_pie_chart,plot_hcw_type)
+
+```
+
+## Proportion of cases among key age groups over time
+```{r}
+
+source(here("scripts","age_sex_pyramids.R"))
+cowplot::plot_grid(plot_under5, plot_under18, plot_25_35, nrow = 1 )
+
+```
+
+
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+
+# __Contact tracing performance__
+## Contact tracing KPIs over district
+```{r}
+
+source(here("scripts","contact_tracing.R"))
+formattable_tab_contact_status
+
+```
+
+## Cases who were known contacts
+```{r}
+
+source(here("scripts","contact_tracing.R"))
+plot_cases_known_contacts
+
+```
+
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+
+# __Alerts performance__
+## Volume of signals and alerts over time
+```{r}
+
+source(here("scripts","alerts.R"))
+alert_plot
+
+```
+
+
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+
+# __Transmission dynamics__
+## Rt estimates{.tabset}
+```{r est_rt, include=TRUE, echo =FALSE, fig.align="center"}
+
+source(here("scripts","Rt_est.R"))
+plot_R
+
+```
+
+
+# __Thematic Areas__
+
+## Case Fatality{.tabset}
+
+### CFR over time
+```{r cfr_over_time, include=TRUE, fig.align="center"}
+
+source(here("scripts","cfr_over_time.R"))
+plot_cfr_by_week
+
+
+```
+
+### CFR by admission delay, age, sex
+```{r cfr_combined, include=TRUE, fig.align="center"}
+
+source(here("scripts","cfr_plots.R"))
+plot_combined_cfr
+
+```
+
+## Time Delays{.tabset}
+### Onset to isolation
+```{r}
+
+source(here("scripts","time_delays.R"))
+boxplot_delay_onset_iso
+
+```
+
+### Onset to sample collection
+```{r}
+
+source(here("scripts","time_delays.R"))
+boxplot_delay_onset_sample
+
+```
+
+### Contact exposure to isolation
+```{r}
+
+source(here("scripts","time_delays.R"))
+boxplot_delay_expo_iso
+
+```
+
+
+### Sample collection to result confirmation
+```{r}
+
+source(here("scripts","time_delays.R"))
+boxplot_delay_sample_confirmation
+
+```
+
+
+## Children{.tabset}
+### CFR by age group
+```{r children_cfr, include=TRUE, fig.align="center"}
+
+source(here("scripts","children_cfr_table.R"))
+children_table
+
+```
+### CFR by district
+
+## Health care workers{.tabset}
+```{r hcw_type, include=TRUE, fig.align="center"}
+
+source(here("scripts","occupation.R"))
+plot_hcw_type
+
+```
+
+
+## Risk factors{.tabset}
+
+
+# __IPC__
+
+# __Clinical Management__
+
+# __Data quality__
+
+## Data completion - Case investigation{.tabset}
+
+### COmpletion rates across core CIF Variables
+```{r linelist_compl, include=TRUE, fig.align="center"}
+
+source(here("scripts","completion.R"))
+linelist_compl
+
+```
+
+### Heatmap of % missingness across core CIF Variables
+```{r linelist_coml_heat, include=TRUE, fig.align="center"}
+
+source(here("scripts","completion.R"))
+linelist_coml_heat
+
+```
+
+
+## Data completion - Contact tracing
+
+## Data completion - Lab RDS
+
+## Data completion - ETU
+
+
+# __Forecast/Prepare__
+## Case projections{.tabset}
+### Scenario 1 (Steady transmission, R0 = 1)
+```{r proj_1, include=TRUE, fig.align="center"}
+
+# source(here("scripts","Rt.R"))
+# 
+# plot_1
+
+```
+
+### Scenario 2 (R0 = 1.2)
+```{r proj_2, include=TRUE, fig.align="center"}
+
+# source(here("scripts","Rt.R"))
+# 
+# plot_1.2
+
+```
+
+### Scenario 3 (Rt = 1.5)
+```{r proj_3, include=TRUE, fig.align="center"}
+
+# source(here("scripts","Rt.R"))
+# 
+# plot_1.5
+
+```
+
+
+## Estimated Bed needs{.tabset}
+
+
